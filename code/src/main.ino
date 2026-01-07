@@ -50,60 +50,56 @@
 
 void on_key_a_click(void) {
     log_main("key a pressed");
+    uint8_t my_weather = 0;
+    int8_t my_temp = 0;  
+    uint8_t Light = 0;
     #define speed_val 82
+    LSM6DSV16X_RezeroYaw_Fresh(200); 
     if (!Wait_Start_Cmd(1000)) {
         alarm_fail();
     }
-    // Zigbee_Garage_Ctrl(1, 1, true);
-    LSM6DSV16X_RezeroYaw_Fresh(200); // 陀螺仪归零
-    Car_MoveForward(speed_val, 1350); // 发车段特殊指令
-    uint8_t my_weather = 0;
-    int8_t my_temp = 0;  
-    bool isSuccess = Zigbee_Bus_Read_Env(&my_weather, &my_temp);
+    Zigbee_Garage_Ctrl(GARAGE_TYPE_B, 1, true);
+    Car_MoveForward(speed_val, 1350); 
+    if (!Zigbee_Bus_Read_Env(&my_weather, &my_temp)) {
+        alarm_fail();
+    }
     Car_Turn_Gryo(-90);
-    uint8_t LuDeng = 0;
-    LuDeng = my_temp%4+1;
-    Infrared_Street_Light_Set(LuDeng);
+    Light = my_temp % 4 + 1;
+    Infrared_Street_Light_Set(Light);
     Car_Turn_Gryo(90);
     Car_TrackToCross(speed_val);
     identifyTraffic_New(TRAFFIC_A);
     Car_Turn_Gryo(180);
     Car_MoveForward(60,300);
-    DCMotor.Car_Back(60, 300);	
-    //identifyQrCode_New(3);
-    // JtaiA();
-    // Car_HouTui(60,300);
+    Car_MoveBackward(60, 300);
+    if (!identifyQrCode_New(3)) {
+        alarm_fail();
+    }
     Car_Turn_Gryo(90);
     Car_TrackToCross(speed_val);
     if (!Wait_Start_Cmd(1000)) {
         alarm_fail();
     }
-
     Car_Turn_Gryo(0); 
     identifyTraffic_New(TRAFFIC_B);
     Car_TrackToCross(speed_val);
-    Zigbee_Gate_Display_LicensePlate("A12345");
-    // }		
+    Zigbee_Gate_Display_LicensePlate("A12345");	
     Car_TrackToCross(speed_val);
     Car_Turn_Gryo(90);
     Car_MoveForward(60,300);		
-    identifyQrCode_New(3);
-    // BZWB();
-    DCMotor.Car_Back(60, 300);	
+    if (!identifyQrCode_New(2)) {
+        alarm_fail();
+    }
+    Car_MoveBackward(60, 300);
     Car_Turn_Gryo(-90); 
     Car_TrackToCross(speed_val);
     Car_MoveForward_Gyro(85, 1950, -90);
     Car_Turn_Gryo(-135);
-    // Infrared_Activate_FHT(receive,5);
     Car_BackIntoGarage_Gyro(90, 1200, -180); //倒车入库
-    // Zigbee_Wireless_Activate(Wu_Xian_Dian);
     if (!Wait_Start_Cmd(1000)) {
         alarm_fail();
     }
-    // SendArray(DATA_TYPE_UNKNOWN,Wu_Xian_Dian,6,0);
-    // uint8_t *cheku = WaitData(DATA_TYPE_CMD,5000);
     Zigbee_Garage_Ctrl(GARAGE_TYPE_A, 3, false);
-
 }
 
 
@@ -118,7 +114,7 @@ void on_key_b_click(void) {
 
 void on_key_c_click(void) {
     log_main("key c pressed");
-        log_main("key c pressed2");
+
 }
 
 void on_key_d_click(void) {

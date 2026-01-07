@@ -86,10 +86,10 @@ uint8_t identifyTraffic_New(TrafficID id)
 }
 
 
-void identifyQrCode_New(uint8_t slot_count)
+bool identifyQrCode_New(uint8_t slot_count)
 {
     K210_Frame frame;
-
+    bool res = false;
     Servo_SetAngle(SERVO_QRCODE_IDENTIFY_ANGLE);
     memset(g_qr_raw_slots, 0, sizeof(g_qr_raw_slots));
 
@@ -102,11 +102,15 @@ void identifyQrCode_New(uint8_t slot_count)
         handleQrFrame(&frame);
         K210_ClearRxByFrame(&frame);
         log_k210("QrCode Slot Index: %d", frame.var.var_id);
-        if (frame.var.var_id >= slot_count - 1) break;
+        if (frame.var.var_id >= slot_count - 1) {
+            res = true;
+            break;
+        }
     }
 
     K210_SendCmd(CMD_QR_CODE_STOP, 0, 0);
     Servo_SetAngle(SERVO_DEFAULT_ANGLE);
+    return res;
 }
 
 

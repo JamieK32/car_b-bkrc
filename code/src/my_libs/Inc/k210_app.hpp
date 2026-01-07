@@ -17,7 +17,7 @@
 
 uint8_t identifyTraffic_New(TrafficID id);
 
-void identifyQrCode_New(uint8_t sheet);
+bool identifyQrCode_New(uint8_t slot_count);
 void Servo_SetAngle(int angle);
 
 #endif 
