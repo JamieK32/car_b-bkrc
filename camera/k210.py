@@ -300,6 +300,8 @@ class LineTracker:
 # =============================================================================
 # 9) QR Code Processor (保留槽位发送 + 舵机点头 + ROI轮询)
 # =============================================================================
+
+
 class QRCodeProcessor:
     def __init__(self, sensor_mgr, uart_comm, servo_ctrl, debug=False, max_slots=3, varid_offset=0):
         self.sensor_mgr = sensor_mgr
@@ -307,77 +309,71 @@ class QRCodeProcessor:
         self.servo_ctrl = servo_ctrl
         self.debug      = debug
 
+        # UART 槽位管理逻辑
         self.max_slots = max_slots
         self.varid_offset = varid_offset
-
         self.payload_to_slot = {}
         self.next_slot = 0
 
-        rois_2d = [
-            [(79, 66, 157, 125), (60, 40, 200, 160), (95, 75, 80, 60)],
-            [(43, 0, 122, 90),   (2, 113, 199, 128), (0, 55, 90, 90)],
-            [(141, 0, 180, 134), (107, 119, 212, 122), (170, 55, 90, 90)],
-            [(0, 0, 180, 140),   (140, 0, 180, 140), (70, 0, 120, 80)],
-            [(0, 100, 180, 140), (140, 100, 180, 140), (70, 110, 120, 80)],
-        ]
-
-        self.rois_to_poll = []
-        for gi, group in enumerate(rois_2d):
-            for rj, roi in enumerate(group):
-                self.rois_to_poll.append((roi, "G{}-{}".format(gi, rj)))
-        self.rois_to_poll.append((None, "FULL"))
+        # 固定的高效扫描区域 (经测试效果最好)
+        self.fixed_roi = (59, 10, 228, 223)
 
     def reset_slots(self):
+        """重置已识别的二维码记录，为下一次扫描做准备"""
         self.payload_to_slot.clear()
         self.next_slot = 0
         if self.debug:
             log("QR", "slots cleared")
 
     def _send_payload_with_slot(self, payload):
+        """将识别结果分配槽位并通过 UART 发送"""
         s = str(payload).strip()
         if not s:
             return
 
+        # 如果是已识别过的，获取原有槽位；否则分配新槽位
         if s in self.payload_to_slot:
             slot = self.payload_to_slot[s]
         else:
             if self.next_slot >= self.max_slots:
-                log("QR", "slots full, ignore new payload: {}".format(s), always=True)
+                if self.debug:
+                    log("QR", "slots full, ignore: {}".format(s))
                 return
             slot = self.next_slot
             self.payload_to_slot[s] = slot
             self.next_slot += 1
 
+        # 计算 VarID 并通过串口发送协议包
         var_id = slot + self.varid_offset
         self.uart_comm.send_var(var_id, s.encode())
-        if self.debug:
-            log("QR", "SEND slot={} varid={} data={}".format(slot, var_id, s))
 
-    def process(self, scan_time_sec=10, target_count=2):
+        if self.debug:
+            log("QR", "TX -> slot:{} varid:{} data:{}".format(slot, var_id, s))
+
+    def process(self, scan_time_sec=20, target_count=2):
+        """主处理循环：包含传感器初始化、舵机点头及识别发送"""
+        # 1. 初始化传感器 (请确保 SensorManager 已包含你满意的参数)
         self.sensor_mgr.init_qr_sensor()
         self.reset_slots()
 
+        # 2. 舵机点头参数控制
         angle = -9
         scan_dir = 1
-        scan_min, scan_max = -15, 0
+        scan_min, scan_max = 0, 5
         last_move = 0
         MOVE_INTERVAL = 100
-        ANGLE_STEP = 0.5
-
-        self.servo_ctrl.set_angle(angle)
-        time.sleep_ms(200)
+        ANGLE_STEP = 0.2
 
         start = time.ticks_ms()
         timeout = scan_time_sec * 1000
 
-        roi_index = 0
-        total = len(self.rois_to_poll)
-
         if self.debug:
-            log("QR", "start slots={} target_count={} scan={}s".format(self.max_slots, target_count, scan_time_sec))
+            log("QR", "Process start. Target:{}".format(target_count))
 
         while time.ticks_ms() - start < timeout:
             now = time.ticks_ms()
+
+            # 3. 舵机微动逻辑：增加捕捉角度
             if now - last_move > MOVE_INTERVAL:
                 angle += scan_dir * ANGLE_STEP
                 if angle <= scan_min:
@@ -388,36 +384,40 @@ class QRCodeProcessor:
                     scan_dir = -1
                 self.servo_ctrl.set_angle(angle)
                 last_move = now
-                time.sleep_ms(80)
+                time.sleep_ms(1)
                 continue
 
+            # 4. 图像获取与识别
             img = sensor.snapshot()
-            roi, name = self.rois_to_poll[roi_index]
 
-            res = img.find_qrcodes(x_stride=1) if roi is None else img.find_qrcodes(roi=roi, x_stride=1)
-
-            if self.debug and roi:
-                img.draw_rectangle(roi, color=(0, 255, 0), thickness=2)
+            # 采用固定 ROI 提高帧率和成功率
+            res = img.find_qrcodes(roi=self.fixed_roi, x_stride=1)
 
             if res:
                 for code in res:
                     payload = code.payload()
+
+                    # 只有在调试模式下才画框，节省开销
                     if self.debug:
                         img.draw_rectangle(code.rect(), color=(255, 0, 0), thickness=3)
-                        log("QR", "GOT {}: {}".format(name, payload))
+                        img.draw_rectangle(self.fixed_roi, color=(0, 255, 0), thickness=2)
+
+                    # 分配槽位并发送数据
                     self._send_payload_with_slot(payload)
 
+            # 5. 显示画面
             lcd.display(img)
 
+            # 6. 判定退出条件
             if len(self.payload_to_slot) >= target_count:
                 if self.debug:
-                    log("QR", "target reached, exit")
+                    log("QR", "Target reached, exiting...")
                 break
 
-            roi_index = (roi_index + 1) % total
-
         if self.debug:
-            log("QR", "final slots={}".format(self.payload_to_slot))
+            log("QR", "Final Results: {}".format(self.payload_to_slot))
+
+        return self.payload_to_slot
 
 # =============================================================================
 # 10) Command Processor
@@ -427,7 +427,7 @@ class CommandProcessor:
         self.servo_ctrl = servo_ctrl
         self.mode_mgr   = mode_mgr
         self.qr_target_count = 2
-
+        self.qr_timeout_s = 20
         self.handlers = {
             Protocol.CMD_SET_SERVO_POSITIVE: self._servo_pos,
             Protocol.CMD_SET_SERVO_NEGATIVE: self._servo_neg,
@@ -457,9 +457,10 @@ class CommandProcessor:
     def _idle(self):
         self.mode_mgr.set_mode(Mode.IDLE)
 
-    def _qr_start(self, target_count):
+    def _qr_start(self, target_count, timeout_s):
         self.qr_target_count = target_count if target_count > 0 else 2
-        log("QR", "CMD target_count={}".format(self.qr_target_count), always=True)
+        self.qr_timeout_s = timeout_s if timeout_s > 0 else 20  # ✅ d2=0 就用默认 20s
+        log("QR", "CMD target_count={} timeout_s={}".format(self.qr_target_count, self.qr_timeout_s), always=True)
         self.mode_mgr.set_mode(Mode.QRCODE)
 
     def process(self, data: bytes):
@@ -478,15 +479,16 @@ class CommandProcessor:
 
         cmd = data[3]
         d1  = data[4]
-
+        d2  = data[5]   # ✅ 新增
         fn = self.handlers.get(cmd)
         if not fn:
             return False
 
         if cmd in (Protocol.CMD_SET_SERVO_POSITIVE,
-                   Protocol.CMD_SET_SERVO_NEGATIVE,
-                   Protocol.CMD_QR_CODE_START):
+                   Protocol.CMD_SET_SERVO_NEGATIVE):
             fn(d1)
+        elif cmd == Protocol.CMD_QR_CODE_START:
+            fn(d1, d2)   # ✅ 把 timeout_s 传进去
         else:
             fn()
 
@@ -556,7 +558,8 @@ class K210Controller:
             elif mode == Mode.QRCODE and not self.run_lock:
                 self.run_lock = True
                 target = self.cmd.qr_target_count
-                self.qr.process(scan_time_sec=15, target_count=target)
+                timeout_s = self.cmd.qr_timeout_s
+                self.qr.process(scan_time_sec=timeout_s, target_count=target)
                 self.run_lock = False
 
                 self.sensor_mgr.init_gray_sensor()

@@ -1,7 +1,7 @@
 #include "vehicle_exchange.h"
 #include "zigbee_frame_io.h"
 
-#define TX_REPEAT_COUNT   8
+#define TX_REPEAT_COUNT   4
 #define TX_REPEAT_GAP_MS  50
 
 /* 收到数据后，如果连续这么久都没新帧，就认为“这一包结束了” */

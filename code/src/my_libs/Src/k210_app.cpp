@@ -22,6 +22,8 @@ uint8_t g_qr_raw_slots[QRCODE_SLOTS][QRCODE_SLOT_SIZE];
 
 static inline void handleQrFrame(K210_Frame *frame);
 
+#define QRCODE_TIMEOUT_S 25
+
 void Servo_SetAngle(int angle)
 {
     K210_CMD cmd;
@@ -92,10 +94,8 @@ bool identifyQrCode_New(uint8_t slot_count)
     bool res = false;
     Servo_SetAngle(SERVO_QRCODE_IDENTIFY_ANGLE);
     memset(g_qr_raw_slots, 0, sizeof(g_qr_raw_slots));
-
-    K210_SendCmd(CMD_QR_CODE_START, slot_count, 0);
-
-    unsigned long deadline = millis() + 20000UL;
+    K210_SendCmd(CMD_QR_CODE_START, slot_count, QRCODE_TIMEOUT_S);
+    unsigned long deadline = millis() + (QRCODE_TIMEOUT_S * 1000U);
     while ((long)(millis() - deadline) < 0)
     {
         if (!K210_ReadFrame(&frame, K210_READ_VAR_LEN)) continue;
@@ -104,6 +104,7 @@ bool identifyQrCode_New(uint8_t slot_count)
         log_k210("QrCode Slot Index: %d", frame.var.var_id);
         if (frame.var.var_id >= slot_count - 1) {
             res = true;
+            K210_SendCmd(CMD_QR_CODE_STOP, 0, 0);
             break;
         }
     }

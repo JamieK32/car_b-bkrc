@@ -32,6 +32,7 @@
 #include "Display3D.hpp"
 #include "multi_button.h"
 #include "button_user.h"
+#include "qrcode_datamap.hpp"
 
 // 各种演示
 #include "qrcode_demos.hpp"
@@ -40,20 +41,23 @@
 
 #if LOG_MAIN_EN
   #define log_main(fmt, ...)  LOG_P("[MAIN] " fmt "\r\n", ##__VA_ARGS__)
+  #define alarm_fail()  do { BEEP.ToggleNTimes(3, 120); } while(0)
+  #define alarm_log1()   do { BEEP.ToggleNTimes(2, 120); } while(0)
+  #define alarm_log2()   do { BEEP.ToggleNTimes(2, 120); } while(0)
 #else
-  #define log_main(...)  do {} while(0)
+  #define log_main(...) do {} while(0)
+  #define alarm_fail()  do {} while(0)
+  #define alarm_log1()   do {} while(0)
+  #define alarm_log2()   do {} while(0)
 #endif
 
-#define alarm_fail()  do { BEEP.ToggleNTimes(3, 120); } while(0)
-#define alarm_log()   do { BEEP.ToggleNTimes(1, 120); } while(0)
-
-
 void on_key_a_click(void) {
-    log_main("key a pressed");
     uint8_t my_weather = 0;
     int8_t my_temp = 0;  
-    uint8_t Light = 0;
-    #define speed_val 82
+    uint8_t light_gear = 0;
+    ProtocolData_t data;
+    uint8_t speed_val = 82;
+    const char str[] = "B1B2B5B4";
     LSM6DSV16X_RezeroYaw_Fresh(200); 
     if (!Wait_Start_Cmd(1000)) {
         alarm_fail();
@@ -64,15 +68,29 @@ void on_key_a_click(void) {
         alarm_fail();
     }
     Car_Turn_Gryo(-90);
-    Light = my_temp % 4 + 1;
-    Infrared_Street_Light_Set(Light);
+    light_gear = my_temp % 4 + 1;
+    Infrared_Street_Light_Set(light_gear);
     Car_Turn_Gryo(90);
     Car_TrackToCross(speed_val);
-    identifyTraffic_New(TRAFFIC_A);
+    data.traffic_light_abc[TRAFFIC_A] = identifyTraffic_New(TRAFFIC_A);
+    if (!SendData(&data)) {
+        alarm_fail();
+    }
     Car_Turn_Gryo(180);
     Car_MoveForward(60,300);
     Car_MoveBackward(60, 300);
     if (!identifyQrCode_New(3)) {
+        alarm_fail();
+    }  
+    if (str) {
+        size_t n = strlen(str);
+        size_t cap = 4 * 3;    
+        if (n > cap) n = cap;
+        for (size_t i = 0; i < n; i++) {
+            data.random_route[i / 3][i % 3] = (uint8_t)str[i];
+        }
+    }
+    if (!SendData(&data)) {
         alarm_fail();
     }
     Car_Turn_Gryo(90);
@@ -104,7 +122,6 @@ void on_key_a_click(void) {
 
 
 void on_key_b_click(void) {
-    log_main("key b pressed");
     ZigbeeBusInfo info;
     Zigbee_Bus_Read_All(&info, 1000);
     PrintBusInfo(&info);
@@ -113,26 +130,49 @@ void on_key_b_click(void) {
 }
 
 void on_key_c_click(void) {
-    log_main("key c pressed");
-
+    ProtocolData_t data;
+    if (!identifyQrCode_New(3)) {
+        alarm_fail();
+        return;
+    }
+    qr_data_map();
+    uint8_t *qr_data1 = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT); 
+    uint8_t qr_data1_len = qr_get_typed_len(kQrType_Bracket_LT);
+    if (qr_data1 && qr_data1_len) {
+        qr_data1 = (uint8_t *)algo_extract_bracket((const char*)qr_data1, '<');
+        uint8_t route_len = qr_data1_len - 6;
+        uint8_t route_str[12];
+        for (int i = 0; i < route_len; i++) {
+            route_str[i] = qr_data1[2 + i];
+        }
+        route_str[route_len] = '\0';
+        log_main("%s", (const char *)route_str);
+        for (int i = 0; i < route_len; i++) {
+            data.random_route[i / 3][i % 3] = route_str[i];
+        }
+        if (!SendData(&data)) {
+            alarm_fail();
+        }
+        alarm_log2();
+    }
 }
 
 void on_key_d_click(void) {
-    log_main("key d pressed");
+
 }
 
 
 
 void btn_callback(void *btn_ptr) {
-    alarm_log();
+    alarm_log1();
     struct Button* btn = (struct Button*)btn_ptr;
     uint8_t id = btn->button_id;   // ✅ 直接取值
     switch (id)
     {
-        case KEY_A: on_key_a_click(); break;
-        case KEY_B: on_key_b_click(); break;
-        case KEY_C: on_key_c_click(); break;
-        case KEY_D: on_key_d_click(); break;
+        case KEY_A: log_main("key a pressed");  on_key_a_click(); break;
+        case KEY_B: log_main("key b pressed");  on_key_b_click(); break;
+        case KEY_C: log_main("key c pressed");  on_key_c_click(); break;
+        case KEY_D: log_main("key d pressed");  on_key_d_click(); break;
         default:
             log_main("Unknown key id: %d", id);
             alarm_fail();
@@ -164,7 +204,7 @@ void setup()
 	LSM6DSV16X_RezeroYaw_Fresh();
 	delay(2000); // 强行静止2秒
 #endif 
-    alarm_log();
+    alarm_log2();
 }
 
 void loop()
@@ -179,4 +219,4 @@ void loop()
     }
     button_ticks();
     delay(5);
-}
+}          
