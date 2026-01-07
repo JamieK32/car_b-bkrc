@@ -69,6 +69,11 @@ void Car_MoveForward(uint8_t speed, uint16_t distance)
     DCMotor.Car_Go(speed, distance);
 }
 
+void Car_MoveBackward(uint8_t speed, uint16_t distance)
+{
+    DCMotor.Car_Back(speed, distance);
+}
+
 // angle_deg: +90 左转90度，-90 右转90度
 void Car_Turn(int16_t angle_deg)
 {

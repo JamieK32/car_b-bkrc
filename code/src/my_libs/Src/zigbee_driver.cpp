@@ -138,7 +138,7 @@ void Zigbee_Gate_SetState(bool state) {
  * @brief  道闸系统显示车牌 
  * 注意：licence_str只有6位
  */
-void Zigbee_Barrier_Display_LicensePlate(const char* licence_str) 
+void Zigbee_Gate_Display_LicensePlate(const char* licence_str) 
 {
     // 1. 发送车牌显示指令 (ID: 0x03, 段: 0x10, 0x11)
     if (licence_str != 0) 
@@ -244,7 +244,7 @@ static inline uint8_t checksum_2_5(const uint8_t cmd[8])
  */
 // 调用示例
 #if 0
-ZigbeeBusSystemSyncPayload data;
+ZigbeeBusInfo data;
 
 // 日期时间：2026-03-21 14:30:45
 data.yy   = 26;
@@ -261,7 +261,7 @@ data.temp    = 3;                 // 3℃
 Zigbee_Bus_FullSync_System(&data);
 #endif
 
-void Zigbee_Bus_FullSync_System(const ZigbeeBusSystemSyncPayload *info)
+void Zigbee_Bus_FullSync_System(const ZigbeeBusInfo *info)
 {
     if (!info) return;
 
@@ -319,8 +319,131 @@ void Zigbee_Bus_SpeakPreset(uint8_t voice_id /*1..7*/) {
     pkg[6] = checksum_2_5(pkg);
 
     // ⚠️ 注意：公交站终端节点编号是 0x06（别发错目标）
-    zigbee_send(pkg, /*dst=*/0x06, 50);
+    zigbee_send(pkg, 3, 50);
 }
+
+// ========================== 公交站读取：内部工具 ==========================
+
+static inline uint8_t bcd_to_u8(uint8_t bcd)
+{
+    return (uint8_t)(((bcd >> 4) & 0x0F) * 10 + (bcd & 0x0F));
+}
+
+static inline bool zigbee_frame_check_basic(const uint8_t f[8])
+{
+    if (!f) return false;
+    if (f[0] != 0x55) return false;
+    if (f[7] != 0xBB) return false;
+    return true;
+}
+
+static inline bool zigbee_bus_wait_resp(uint8_t expect_main_cmd,
+                                        uint8_t out[8],
+                                        uint16_t wait_time_ms)
+{
+    unsigned long start = millis();
+    while (millis() - start < wait_time_ms)
+    {
+        if (zigbee_recv(out))
+        {
+            // 基本合法性
+            if (!zigbee_frame_check_basic(out)) continue;
+
+            // 必须是公交站节点 ID = 0x06
+            if (out[1] != 0x06) continue;
+
+            // 主指令匹配
+            if (out[2] != expect_main_cmd) continue;
+
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Zigbee_Bus_Read_Date(uint8_t* yy, uint8_t* mon, uint8_t* day, uint16_t wait_time = 800)
+{
+    uint8_t cmd[8] = {0x55, 0x06, 0x31, 0x01, 0x00, 0x00, 0x00, 0xBB};
+    cmd[6] = (uint8_t)((cmd[2] + cmd[3] + cmd[4] + cmd[5]) & 0xFF);
+    zigbee_send(cmd, 3, 300);
+
+    uint8_t fb[8];
+    if (!zigbee_bus_wait_resp(0x02, fb, wait_time)) return false;
+
+    if (yy)  *yy  = bcd_to_u8(fb[3]);
+    if (mon) *mon = bcd_to_u8(fb[4]);
+    if (day) *day = bcd_to_u8(fb[5]);
+    return true;
+}
+
+bool Zigbee_Bus_Read_Time(uint8_t* hour, uint8_t* min, uint8_t* sec, uint16_t wait_time = 800)
+{
+    uint8_t cmd[8] = {0x55, 0x06, 0x41, 0x01, 0x00, 0x00, 0x00, 0xBB};
+    cmd[6] = (uint8_t)((cmd[2] + cmd[3] + cmd[4] + cmd[5]) & 0xFF);
+    zigbee_send(cmd, 3, 300);
+
+    uint8_t fb[8];
+    if (!zigbee_bus_wait_resp(0x03, fb, wait_time)) return false;
+
+    if (hour) *hour = bcd_to_u8(fb[3]);
+    if (min)  *min  = bcd_to_u8(fb[4]);
+    if (sec)  *sec  = bcd_to_u8(fb[5]);
+    return true;
+}
+
+bool Zigbee_Bus_Read_Env(uint8_t* weather, int8_t* temp, uint16_t wait_time = 800)
+{
+    uint8_t cmd[8] = {0x55, 0x06, 0x43, 0x00, 0x00, 0x00, 0x00, 0xBB};
+    cmd[6] = (uint8_t)((cmd[2] + cmd[3] + cmd[4] + cmd[5]) & 0xFF);
+    zigbee_send(cmd, 3, 300);
+
+    uint8_t fb[8];
+    if (!zigbee_bus_wait_resp(0x04, fb, wait_time)) return false;
+
+    if (weather) *weather = fb[3];
+    if (temp)    *temp    = (int8_t)fb[4]; // 协议：16进制温度字节，单位℃
+    return true;
+}
+
+
+bool Zigbee_Bus_Read_All(ZigbeeBusInfo* out, uint16_t wait_time_each = 800)
+{
+    if (!out) return false;
+
+    bool ok1 = Zigbee_Bus_Read_Date(&out->yy, &out->mon, &out->day, wait_time_each);
+    bool ok2 = Zigbee_Bus_Read_Time(&out->hour, &out->min, &out->sec, wait_time_each);
+    bool ok3 = Zigbee_Bus_Read_Env(&out->weather, &out->temp, wait_time_each);
+
+    return ok1 && ok2 && ok3;
+}
+
+static const char* ZigbeeWeatherToStr(uint8_t w)
+{
+    switch (w) {
+        case 0: return "Windy";
+        case 1: return "Cloudy";
+        case 2: return "Sunny";
+        case 3: return "Light Snow";
+        case 4: return "Light Rain";
+        case 5: return "Overcast";
+        default: return "Unknown";
+    }
+}
+
+void PrintBusInfo(const ZigbeeBusInfo* info)
+{
+    if (!info) {
+        LOG_P("[BUS] info is NULL\r\n");
+        return;
+    }
+
+    // 如果你希望按 20xx 年显示，这里 +2000；否则就直接打印两位年
+    LOG_P("[BUS] Date: 20%02u-%02u-%02u\r\n", info->yy, info->mon, info->day);
+    LOG_P("[BUS] Time: %02u:%02u:%02u\r\n", info->hour, info->min, info->sec);
+    LOG_P("[BUS] Weather: %u (%s)\r\n", info->weather, ZigbeeWeatherToStr(info->weather));
+    LOG_P("[BUS] Temp: %d C\r\n", (int)info->temp);
+}
+
 
 /**
  * [ZIGBEE TFT DRIVER 2026 - FINAL MERGE]

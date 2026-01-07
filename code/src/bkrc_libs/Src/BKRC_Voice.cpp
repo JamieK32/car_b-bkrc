@@ -32,13 +32,8 @@ void _BKRC_Voice::Initialization(void)
 {
   Serial2.begin(115200);
   while(Serial2.read() >=0);
-  Serial.begin(115200);
-  while(Serial.read() >=0);
 }
 
-
- 
-/*语音播报字母数字*/
 void _BKRC_Voice::Voice_Broadcast_Text(char text[]) {
     for (int i = 0; i < strlen(text); i++)
     {
@@ -47,15 +42,26 @@ void _BKRC_Voice::Voice_Broadcast_Text(char text[]) {
     }
 }
 
-void _BKRC_Voice::Voice_Broadcast_Cmd(uint8_t cmd) {
-    Serial2.write(cmd);
-    delay(10);
+static const uint16_t VOICE_GAP_MS = 200;
 
+void _BKRC_Voice:: Voice_Broadcast_Cmd(uint16_t cmd)
+{
+    if (cmd <= 0xff) { 
+        Serial2.write((uint8_t)cmd); 
+    } else {
+        uint8_t hi = (uint8_t)((cmd >> 8) & 0xFF);
+        uint8_t lo = (uint8_t)(cmd & 0xFF);
+        Serial2.write(hi);
+        Serial2.write(lo);
+    }
+    Serial2.flush();
+    delay(VOICE_GAP_MS);
 }
+
 
 bool _BKRC_Voice::Voice_WaitFor(UartCb cb, uint16_t timeout_ms = 5000)
 {
-    if (!cb) return;
+    if (!cb) return false;
 
     uint8_t buf[VOICE_FRAME_LEN];
 
@@ -78,4 +84,80 @@ bool _BKRC_Voice::Voice_WaitFor(UartCb cb, uint16_t timeout_ms = 5000)
         delay(1);
     }
     return false;
+}
+
+// 工具：发一个数字 0~9 的词条
+static inline uint8_t vc_digit(uint8_t d) { return (uint8_t)('0' + d); }
+
+// 类方法：播报一个自然数（0~9999）
+void _BKRC_Voice::Voice_SpeakNumber(uint16_t num)
+{
+    if (num == 0) {
+        Voice_Broadcast_Cmd('0');
+        return;
+    }
+
+    // 分解：千百十个
+    uint8_t qian = (num / 1000) % 10;
+    uint8_t bai  = (num / 100)  % 10;
+    uint8_t shi  = (num / 10)   % 10;
+    uint8_t ge   = (num % 10);
+
+    bool started = false;   // 是否已经开始播报（前导零不读）
+    bool need_zero = false; // 中间是否需要补“零”
+
+    // 千
+    if (qian) {
+        Voice_Broadcast_Cmd(vc_digit(qian));
+        Voice_Broadcast_Cmd(VC_THOU);
+        started = true;
+    }
+
+    // 百
+    if (bai) {
+        if (need_zero) { Voice_Broadcast_Cmd('0');  need_zero = false; }
+        Voice_Broadcast_Cmd(vc_digit(bai));
+        Voice_Broadcast_Cmd(VC_HUND);
+        started = true;
+    } else {
+        if (started && (shi || ge)) need_zero = true;
+    }
+
+    // 十
+    if (shi) {
+        if (need_zero) { Voice_Broadcast_Cmd('0');   need_zero = false; }
+
+        // 10~19：读“十X”，不读“一十X”
+        if (!started && shi == 1) {
+            Voice_Broadcast_Cmd(VC_TEN);
+        } else {
+            Voice_Broadcast_Cmd(vc_digit(shi));
+            Voice_Broadcast_Cmd(VC_TEN);
+        }
+        started = true;
+    } else {
+        if (started && ge) need_zero = true;
+    }
+
+    // 个
+    if (ge) {
+        if (need_zero) { Voice_Broadcast_Cmd('0');   need_zero = false; }
+        Voice_Broadcast_Cmd(vc_digit(ge));
+    }
+}
+
+
+
+void _BKRC_Voice::Voice_SpeakWeather(uint16_t weather_code)
+{
+    Voice_Broadcast_Cmd(VC_TODAY_WEATHER_IS);
+    delay(400); //等待说完
+    Voice_Broadcast_Cmd(VC_WEATHER_WINDY + weather_code);
+}
+
+void _BKRC_Voice::Voice_SpeakTemperature(int16_t temp_c)
+{
+    Voice_Broadcast_Cmd(VC_TEMPERATURE_IS);
+    Voice_SpeakNumber(temp_c);
+    Voice_Broadcast_Cmd(VC_CELSIUS);
 }

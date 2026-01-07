@@ -7,6 +7,7 @@
 #define ZIGBEE_TX_ADDR  0x6008
 #define ZIGBEE_RX_ADDR  0x6100
 #define ZIGBEE_FRAME_LEN 8
+
 /* 交通灯编号 */
 typedef enum {
     TRAFFIC_A = 0,
@@ -63,42 +64,45 @@ typedef enum {
 } TrafficSignType;
 
 
-// ========================== 数据结构：全量同步载荷 ==========================
 typedef struct {
-    uint8_t yy;      // 年(两位) 例如 26 表示 2026
-    uint8_t mon;     // 月 1-12
-    uint8_t day;     // 日 1-31
-    uint8_t hour;    // 时 0-23
-    uint8_t min;     // 分 0-59
-    uint8_t sec;     // 秒 0-59
-    uint8_t weather; // 天气编码
-    int8_t  temp;    // 温度(10进制输入，直接HEX显示，不带负号；若要支持负温另议)
-} ZigbeeBusSystemSyncPayload;
-
+    uint8_t yy, mon, day;
+    uint8_t hour, min, sec;
+    uint8_t weather;
+    int8_t  temp;
+} ZigbeeBusInfo;
 
 
 /* ================== 函数声明 ================== */
-
-
-void Zigbee_TxWithRetry(uint8_t *cmd, uint8_t retry_cnt, uint16_t interval_ms);
 void Zigbee_Traffic_Open(TrafficID id);
 void Zigbee_Traffic_SetColor(TrafficID id, TrafficColor color);
+
 void Zigbee_Garage_Ctrl(GarageType garage_type, int floor, bool is_wait = false, uint16_t wait_time = 8000);
 uint8_t Zigbee_Garage_Get(GarageType type, uint16_t wait_time = 8000);
+
 void Zigbee_Gate_SetState(bool state);
-void Zigbee_Barrier_Display_LicensePlate(const char* licence_str);
+void Zigbee_Gate_Display_LicensePlate(const char* licence_str);
+
 void Zigbee_LED_Display_Hex(uint8_t rank, uint8_t val);
 void Zigbee_LED_Display_Number(uint8_t rank, const char* str);
 void Zigbee_LED_Display_Distance(uint8_t val);
 void Zigbee_LED_TimerControl(LedTimerControl state);
-void Zigbee_Bus_FullSync_System(const ZigbeeBusSystemSyncPayload *info);
-void Zigbee_Bus_SpeakPreset(uint8_t voice_id /*1..7*/);
+
+void Zigbee_Bus_FullSync_System(const ZigbeeBusInfo *info);
+void Zigbee_Bus_SpeakPreset(uint8_t voice_id);
+bool Zigbee_Bus_Read_Date(uint8_t* yy, uint8_t* mon, uint8_t* day, uint16_t wait_time = 800);
+bool Zigbee_Bus_Read_Time(uint8_t* hour, uint8_t* min, uint8_t* sec, uint16_t wait_time = 800);
+bool Zigbee_Bus_Read_Env(uint8_t* weather, int8_t* temp, uint16_t wait_time = 800);
+bool Zigbee_Bus_Read_All(ZigbeeBusInfo* out, uint16_t wait_time_each = 800);
+
 void Zigbee_TFT_Page_Turn(TftId id, uint8_t mode);
 void Zigbee_TFT_Goto_Page(TftId id, uint8_t page);
 void Zigbee_TFT_Display_Plate(TftId id, const char* plate);
 void Zigbee_TFT_Display_Distance(TftId id, uint16_t dist);
 void Zigbee_TFT_Timer_Control(TftId id, TftTimerAction action);
 void Zigbee_TFT_Display_Traffic_Sign(TftId id, TrafficSignType sign);
+
 void Zigbee_Wireless_Activate(uint8_t* keys);
+
+void PrintBusInfo(const ZigbeeBusInfo* info);
 
 #endif 

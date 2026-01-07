@@ -1,331 +1,402 @@
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
 #include "vehicle_exchange.h"
+#include "zigbee_frame_io.h"
 
-/* ===================== globals ===================== */
-static uint8_t g_seq = 0;
+#define TX_REPEAT_COUNT   8
+#define TX_REPEAT_GAP_MS  50
 
-/* ===================== CRC8 (message-level) ===================== */
-/* 多项式 0x07, 初值 0x00，简单可靠，开销低 */
-static uint8_t crc8_update(uint8_t crc, uint8_t data)
+/* 收到数据后，如果连续这么久都没新帧，就认为“这一包结束了” */
+#define RX_IDLE_END_MS    1000
+
+/* ====== 小工具：超时判断（支持 uint32_t 回卷） ====== */
+static inline bool time_reached(uint32_t start_ms, uint32_t timeout_ms)
 {
-    crc ^= data;
-    for (uint8_t i = 0; i < 8; i++) {
-        if (crc & 0x80) crc = (uint8_t)((crc << 1) ^ 0x07);
-        else           crc = (uint8_t)(crc << 1);
+    return (timeout_ms == 0) ? true : ((uint32_t)(get_ms() - start_ms) >= timeout_ms);
+}
+
+/* ====== 小工具：帧级校验（head/tail/cs） ====== */
+static inline uint8_t calc_cs_local(uint8_t type, uint8_t b0, uint8_t b1, uint8_t b2)
+{
+    return (uint8_t)((type + b0 + b1 + b2) & 0xFF);
+}
+
+static bool frame_valid(const uint8_t buf[8])
+{
+    if (buf[0] != ZIGBEE_HEAD0 || buf[1] != ZIGBEE_HEAD1) return false;
+    if (buf[7] != ZIGBEE_TAIL) return false;
+
+    uint8_t type = buf[2];
+    uint8_t b0   = buf[3];
+    uint8_t b1   = buf[4];
+    uint8_t b2   = buf[5];
+    uint8_t cs   = buf[6];
+
+    return (cs == calc_cs_local(type, b0, b1, b2));
+}
+
+/* ====== 小工具：重复发 1 帧 ====== */
+static void send_frame_repeat(uint8_t type, uint8_t b0, uint8_t b1, uint8_t b2)
+{
+    for (int i = 0; i < TX_REPEAT_COUNT; i++) {
+        SendFrame8(type, b0, b1, b2);
+        delay_ms(TX_REPEAT_GAP_MS);
     }
-    return crc;
 }
 
-static uint8_t crc8_calc(const uint8_t *data, uint16_t len)
+/* ===================== CMD ===================== */
+
+void Send_Start_Cmd(void)
 {
-    uint8_t crc = 0x00;
-    for (uint16_t i = 0; i < len; i++) crc = crc8_update(crc, data[i]);
-    return crc;
+    send_frame_repeat((uint8_t)CMD_START, 0, 0, 0);
 }
 
-static inline void SendAck(DataType type, uint8_t seq, uint8_t ack_byte)
+bool Wait_Start_Cmd(uint32_t timeout_ms)
 {
-    /* 用 META 帧回 ACK：type+seq 绑定 */
-    SendFrame8((uint8_t)type, (uint8_t)(CTRL_META | (seq & CTRL_SEQ_MASK)), META_ACK, ack_byte);
-}
+    uint8_t buf[8];
+    uint32_t start = get_ms();
 
-/* 等待 ACK：收到 META_ACK(type,seq) 且 data==ACK_OK 即成功 */
-static bool WaitAck(DataType type, uint8_t seq, uint32_t timeout_ms)
-{
-    uint32_t elapsed = 0;
-    uint8_t pkt[8];
-    ParsedFrame f;
+    while (!time_reached(start, timeout_ms)) {
 
-    while (elapsed < timeout_ms) {
-        if (ZigbeeRead8(pkt)) {
-            if (ParseFrame(pkt, &f)) {
-                if (f.meta &&
-                    f.arg == META_ACK &&
-                    f.type == (uint8_t)type &&
-                    f.seq  == (uint8_t)(seq & CTRL_SEQ_MASK))
-                {
-                    return (f.data == ACK_OK);
-                }
+        if (ZigbeeRead8(buf)) {
+            if (!frame_valid(buf)) continue;
+
+            if (buf[2] == (uint8_t)CMD_START) {
+                return true;
             }
+        } else {
+            delay_ms(1);
         }
-        delay_ms(1);
-        elapsed++;
     }
     return false;
 }
 
-static bool ParseFrame(const uint8_t pkt[8], ParsedFrame *f)
+/* ===================== DATA HELPERS ===================== */
+
+static inline bool any_nonzero3(uint8_t a, uint8_t b, uint8_t c)
 {
-    if (!pkt || !f) return false;
-    if (pkt[0] != ZIGBEE_HEAD0 || pkt[1] != ZIGBEE_HEAD1) return false;
-    if (pkt[7] != ZIGBEE_TAIL) return false;   // ✅补上
+    return (a | b | c) != 0;
+}
 
-    uint8_t type = pkt[2];
-    uint8_t ctrl = pkt[3];
-    uint8_t arg  = pkt[4];
-    uint8_t dat  = pkt[5];
-    uint8_t cs   = pkt[6];
+static inline void clear3(uint8_t *a, uint8_t *b, uint8_t *c)
+{
+    *a = 0; *b = 0; *c = 0;
+}
 
-    if (calc_cs(type, ctrl, arg, dat) != cs) return false;
+static inline void send_item_if_nonzero_and_clear(CarDataEnum id, uint8_t *d0, uint8_t *d1, uint8_t *d2)
+{
+    if (any_nonzero3(*d0, *d1, *d2)) {
+        send_frame_repeat((uint8_t)id, *d0, *d1, *d2);
+        clear3(d0, d1, d2);
+    }
+}
 
-    f->type  = type;
-    f->ctrl  = ctrl;
-    f->arg   = arg;
-    f->data  = dat;
-    f->seq   = (uint8_t)(ctrl & CTRL_SEQ_MASK);
-    f->first = (ctrl & CTRL_FIRST) != 0;
-    f->last  = (ctrl & CTRL_LAST)  != 0;
-    f->meta  = (ctrl & CTRL_META)  != 0;
+static inline void send_item_u8_if_nonzero_and_clear(CarDataEnum id, uint8_t *v)
+{
+    if (*v != 0) {
+        send_frame_repeat((uint8_t)id, *v, 0, 0);
+        *v = 0;
+    }
+}
+
+static inline void send_item_u16bytes_if_nonzero_and_clear(CarDataEnum id, uint8_t v2[2])
+{
+    if ((v2[0] | v2[1]) != 0) {
+        send_frame_repeat((uint8_t)id, v2[0], v2[1], 0);
+        v2[0] = 0; v2[1] = 0;
+    }
+}
+
+/* ===================== SEND WHOLE STRUCT ===================== */
+/* ✅ 规则：字段不为0才发送；发送后清零（避免重复发送） */
+bool SendData(ProtocolData_t *inout)
+{
+    if (!inout) return false;
+
+    /* 车牌：6位 -> 前3/后3（分别判断各自3字节是否全0） */
+    send_item_if_nonzero_and_clear(ENUM_CAR_PLATE_FRONT_3,
+                                   &inout->car_plate[0], &inout->car_plate[1], &inout->car_plate[2]);
+
+    send_item_if_nonzero_and_clear(ENUM_CAR_PLATE_BACK_3,
+                                   &inout->car_plate[3], &inout->car_plate[4], &inout->car_plate[5]);
+
+    /* 时间 */
+    send_item_if_nonzero_and_clear(ENUM_DATE_YYYYMMDD,
+                                   &inout->datetime.date[0], &inout->datetime.date[1], &inout->datetime.date[2]);
+
+    send_item_if_nonzero_and_clear(ENUM_TIME_HHMMSS,
+                                   &inout->datetime.time[0], &inout->datetime.time[1], &inout->datetime.time[2]);
+
+    /* 1位数据 */
+    send_item_u8_if_nonzero_and_clear(ENUM_GARAGE_FINAL_FLOOR, &inout->garage_final_floor);
+    send_item_u8_if_nonzero_and_clear(ENUM_TERRAIN_STATUS,     &inout->terrain_status);
+    send_item_u8_if_nonzero_and_clear(ENUM_TERRAIN_POSITION,   &inout->terrain_position);
+    send_item_u8_if_nonzero_and_clear(ENUM_VOICE_BROADCAST,    &inout->voice_broadcast);
+
+    /* 6位：拆成 low3/high3（每段非0才发；发完清段） */
+    send_item_if_nonzero_and_clear(ENUM_BEACON_CODE_LOW_3,
+                                   &inout->beacon_code[0], &inout->beacon_code[1], &inout->beacon_code[2]);
+    send_item_if_nonzero_and_clear(ENUM_BEACON_CODE_HIGH_3,
+                                   &inout->beacon_code[3], &inout->beacon_code[4], &inout->beacon_code[5]);
+
+    send_item_if_nonzero_and_clear(ENUM_TFT_DATA_LOW_3,
+                                   &inout->tft_data[0], &inout->tft_data[1], &inout->tft_data[2]);
+    send_item_if_nonzero_and_clear(ENUM_TFT_DATA_HIGH_3,
+                                   &inout->tft_data[3], &inout->tft_data[4], &inout->tft_data[5]);
+
+    send_item_if_nonzero_and_clear(ENUM_WIRELESS_CHARGE_LOW_3,
+                                   &inout->wireless_charge_code[0], &inout->wireless_charge_code[1], &inout->wireless_charge_code[2]);
+    send_item_if_nonzero_and_clear(ENUM_WIRELESS_CHARGE_HIGH_3,
+                                   &inout->wireless_charge_code[3], &inout->wireless_charge_code[4], &inout->wireless_charge_code[5]);
+
+    /* 路灯：两个 1位 */
+    send_item_u8_if_nonzero_and_clear(ENUM_STREET_LIGHT_INIT_LEVEL,  &inout->street_light.init_level);
+    send_item_u8_if_nonzero_and_clear(ENUM_STREET_LIGHT_FINAL_LEVEL, &inout->street_light.final_level);
+
+    /* 交通灯（三位） */
+    send_item_if_nonzero_and_clear(ENUM_TRAFFIC_LIGHT_ABC_COLOR,
+                                   &inout->traffic_light_abc[0], &inout->traffic_light_abc[1], &inout->traffic_light_abc[2]);
+
+    /* 立体显示 4组（三位） */
+    send_item_if_nonzero_and_clear(ENUM_3D_DISPLAY_DATA1,
+                                   &inout->display_3d[0][0], &inout->display_3d[0][1], &inout->display_3d[0][2]);
+    send_item_if_nonzero_and_clear(ENUM_3D_DISPLAY_DATA2,
+                                   &inout->display_3d[1][0], &inout->display_3d[1][1], &inout->display_3d[1][2]);
+    send_item_if_nonzero_and_clear(ENUM_3D_DISPLAY_DATA3,
+                                   &inout->display_3d[2][0], &inout->display_3d[2][1], &inout->display_3d[2][2]);
+    send_item_if_nonzero_and_clear(ENUM_3D_DISPLAY_DATA4,
+                                   &inout->display_3d[3][0], &inout->display_3d[3][1], &inout->display_3d[3][2]);
+
+    /* 2位数据（b0/b1，b2补0） */
+    send_item_u16bytes_if_nonzero_and_clear(ENUM_BUS_STOP_TEMPERATURE, inout->bus_stop_temp);
+    send_item_u16bytes_if_nonzero_and_clear(ENUM_GARAGE_AB_FLOOR,      inout->garage_ab_floor);
+
+    /* 3位数据 */
+    send_item_if_nonzero_and_clear(ENUM_DISTANCE_MEASURE,
+                                   &inout->distance[0], &inout->distance[1], &inout->distance[2]);
+
+    send_item_if_nonzero_and_clear(ENUM_GARAGE_INIT_COORD,
+                                   &inout->garage_init_coord[0], &inout->garage_init_coord[1], &inout->garage_init_coord[2]);
+
+    /* 随机路线 4组（三位） */
+    send_item_if_nonzero_and_clear(ENUM_RANDOM_ROUTE_POINT1,
+                                   &inout->random_route[0][0], &inout->random_route[0][1], &inout->random_route[0][2]);
+    send_item_if_nonzero_and_clear(ENUM_RANDOM_ROUTE_POINT2,
+                                   &inout->random_route[1][0], &inout->random_route[1][1], &inout->random_route[1][2]);
+    send_item_if_nonzero_and_clear(ENUM_RANDOM_ROUTE_POINT3,
+                                   &inout->random_route[2][0], &inout->random_route[2][1], &inout->random_route[2][2]);
+    send_item_if_nonzero_and_clear(ENUM_RANDOM_ROUTE_POINT4,
+                                   &inout->random_route[3][0], &inout->random_route[3][1], &inout->random_route[3][2]);
+
     return true;
 }
 
-/* ===================== RX reassembly (simple, in-order) ===================== */
-static uint8_t g_rx_buf[RX_BUF_LEN];
-static uint8_t g_rx_len = 0;
-
-/* 当前正在接收的一条消息状态 */
-static bool    g_rx_busy = false;
-static uint8_t g_rx_type = 0;
-static uint8_t g_rx_seq  = 0;
-static uint8_t g_rx_expect_len = 0;
-static uint8_t g_rx_expect_crc = 0;
-static bool    g_rx_got_crc = false;
-static uint8_t g_rx_next_idx = 0;
-static uint8_t g_rx_crc_calc = 0;
-
-/* 外部过滤：WaitData(type=0xFF) 接任意类型；GetData 会限定 type+seq */
-static uint8_t g_expect_type = 0xFF;
-static bool    g_expect_seq_valid = false;
-static uint8_t g_expect_seq = 0;
-
-uint8_t GetDataLen(void) { return g_rx_len; }
-
-static void rx_reset(void)
+/* ===================== WAIT WHOLE STRUCT ===================== */
+/* ✅ 规则：
+ * - 收到就填充 out（不清零 out 的历史值会更危险，所以这里先 memset 0）
+ * - 只要收到至少1帧有效数据，就返回 true
+ * - 并且：收到后如果一段时间没新帧（RX_IDLE_END_MS），就提前结束返回 true（不必等满 timeout）
+ */
+bool WaitData(ProtocolData_t *out, uint32_t timeout_ms)
 {
-    g_rx_busy = false;
-    g_rx_len = 0;
-    g_rx_got_crc = false;
-    g_rx_next_idx = 0;
-    g_rx_crc_calc = 0;
-}
+    if (!out) return false;
 
-/* 处理一帧：返回 true 表示“完成一条消息并可交付 g_rx_buf” */
-static bool rx_consume_frame(const ParsedFrame *f)
-{
-    if (!f) return false;
+    memset(out, 0, sizeof(*out));
 
-    /* type 过滤 */
-    if (g_expect_type != 0xFF && f->type != g_expect_type) return false;
+    bool received_any = false;
+    uint32_t start_ms = get_ms();
+    uint32_t last_rx_ms = start_ms;
 
-    /* seq 过滤（GetData 使用） */
-    if (g_expect_seq_valid && f->seq != (g_expect_seq & CTRL_SEQ_MASK)) return false;
+    uint8_t buf[8];
 
-    if (f->meta) {
-        /* META_START: data = len */
-        if (f->arg == META_START) {
-            uint8_t len = f->data;
-            if (len == 0 || len > RX_BUF_LEN) {
-                rx_reset();
-                return false;
+    while (true) {
+
+        if (!received_any) {
+            if (time_reached(start_ms, timeout_ms)) return false;
+        } else {
+            if (time_reached(last_rx_ms, RX_IDLE_END_MS)) return true;
+            if (time_reached(start_ms, timeout_ms)) return true; /* 总超时也结束 */
+        }
+
+        if (ZigbeeRead8(buf)) {
+            if (!frame_valid(buf)) continue;
+
+            uint8_t id = buf[2];
+
+            /* 只处理我们的 CarDataEnum（0x09 ~ ENUM_DATA_MAX-1） */
+            if (id < (uint8_t)ENUM_CAR_PLATE_FRONT_3 || id >= (uint8_t)ENUM_DATA_MAX) {
+                continue;
             }
 
-            g_rx_busy = true;
-            g_rx_type = f->type;
-            g_rx_seq  = f->seq;
-            g_rx_expect_len = len;
-            g_rx_got_crc = false;
-            g_rx_next_idx = 0;
-            g_rx_crc_calc = 0;
-            g_rx_len = 0;
-            return false;
-        }
+            switch ((CarDataEnum)id) {
 
-        /* META_CRC8: data = crc8 */
-        if (f->arg == META_CRC8) {
-            if (!g_rx_busy) return false;
-            if (f->type != g_rx_type || f->seq != g_rx_seq) return false;
+            case ENUM_CAR_PLATE_FRONT_3:
+                out->car_plate[0] = buf[3];
+                out->car_plate[1] = buf[4];
+                out->car_plate[2] = buf[5];
+                break;
 
-            g_rx_expect_crc = f->data;
-            g_rx_got_crc = true;
-            return false;
-        }
+            case ENUM_CAR_PLATE_BACK_3:
+                out->car_plate[3] = buf[3];
+                out->car_plate[4] = buf[4];
+                out->car_plate[5] = buf[5];
+                break;
 
-        /* META_ACK：这里是对方回的 ACK，默认不在 RX 重组里处理 */
-        if (f->arg == META_ACK) {
-            return false;
-        }
+            case ENUM_DATE_YYYYMMDD:
+                out->datetime.date[0] = buf[3];
+                out->datetime.date[1] = buf[4];
+                out->datetime.date[2] = buf[5];
+                break;
 
-        /* META_GET / 其他 META：这里不处理 */
-        return false;
-    }
+            case ENUM_TIME_HHMMSS:
+                out->datetime.time[0] = buf[3];
+                out->datetime.time[1] = buf[4];
+                out->datetime.time[2] = buf[5];
+                break;
 
-    /* DATA frame */
-    if (!g_rx_busy) return false;
-    if (f->type != g_rx_type || f->seq != g_rx_seq) return false;
+            case ENUM_GARAGE_FINAL_FLOOR:
+                out->garage_final_floor = buf[3];
+                break;
 
-    uint8_t idx = f->arg;
+            case ENUM_TERRAIN_STATUS:
+                out->terrain_status = buf[3];
+                break;
 
-    /* 允许重复帧（因为发送端可能整包重复发送） */
-    if (idx < g_rx_next_idx) {
-        /* 若内容一致则忽略，否则当作噪声 */
-        if (idx < RX_BUF_LEN && g_rx_buf[idx] == f->data) return false;
-        rx_reset();
-        return false;
-    }
+            case ENUM_TERRAIN_POSITION:
+                out->terrain_position = buf[3];
+                break;
 
-    /* 简化：要求按序 */
-    if (idx != g_rx_next_idx) {
-        rx_reset();
-        return false;
-    }
+            case ENUM_VOICE_BROADCAST:
+                out->voice_broadcast = buf[3];
+                break;
 
-    if (idx >= g_rx_expect_len || idx >= RX_BUF_LEN) {
-        rx_reset();
-        return false;
-    }
+            case ENUM_BEACON_CODE_LOW_3:
+                out->beacon_code[0] = buf[3];
+                out->beacon_code[1] = buf[4];
+                out->beacon_code[2] = buf[5];
+                break;
 
-    /* FIRST 仅作为一致性检查（可选） */
-    if (idx == 0 && !f->first) {
-        /* 容忍：不强制 */
-    }
+            case ENUM_BEACON_CODE_HIGH_3:
+                out->beacon_code[3] = buf[3];
+                out->beacon_code[4] = buf[4];
+                out->beacon_code[5] = buf[5];
+                break;
 
-    g_rx_buf[idx] = f->data;
-    g_rx_crc_calc = crc8_update(g_rx_crc_calc, f->data);
-    g_rx_next_idx++;
+            case ENUM_TFT_DATA_LOW_3:
+                out->tft_data[0] = buf[3];
+                out->tft_data[1] = buf[4];
+                out->tft_data[2] = buf[5];
+                break;
 
-    if (f->last) {
-        /* 必须收齐、且拿到 CRC 才交付 */
-        if (g_rx_next_idx != g_rx_expect_len) {
-            rx_reset();
-            return false;
-        }
-        if (!g_rx_got_crc) {
-            rx_reset();
-            return false;
-        }
-        if (g_rx_crc_calc != g_rx_expect_crc) {
-            rx_reset();
-            return false;
-        }
+            case ENUM_TFT_DATA_HIGH_3:
+                out->tft_data[3] = buf[3];
+                out->tft_data[4] = buf[4];
+                out->tft_data[5] = buf[5];
+                break;
 
-        /* ✅ 收到完整消息且 CRC 正确：立刻回 ACK（1字节） */
-        SendAck((DataType)g_rx_type, g_rx_seq, ACK_OK);
+            case ENUM_WIRELESS_CHARGE_LOW_3:
+                out->wireless_charge_code[0] = buf[3];
+                out->wireless_charge_code[1] = buf[4];
+                out->wireless_charge_code[2] = buf[5];
+                break;
 
-        g_rx_len = g_rx_expect_len;
-        g_rx_busy = false;
-        return true;
-    }
+            case ENUM_WIRELESS_CHARGE_HIGH_3:
+                out->wireless_charge_code[3] = buf[3];
+                out->wireless_charge_code[4] = buf[4];
+                out->wireless_charge_code[5] = buf[5];
+                break;
 
-    return false;
-}
+            case ENUM_STREET_LIGHT_INIT_LEVEL:
+                out->street_light.init_level = buf[3];
+                break;
 
-/* ===================== Send / Get / Wait APIs ===================== */
+            case ENUM_STREET_LIGHT_FINAL_LEVEL:
+                out->street_light.final_level = buf[3];
+                break;
 
-/*
- * 发送整条消息，并等待对端 META_ACK（可选）
- * ack_timeout_ms = 0：不等 ACK（兼容旧行为）
- * 可靠性：META_START + META_CRC8 + seq + ACK +（超时重发整包）
- */
-bool SendArray(DataType type, const uint8_t *data, uint16_t len, uint32_t ack_timeout_ms)
-{
-    if (!data || len == 0) return false;
-    if (len > 255) return false;              /* 因为 META_START 的 len 只有 1 字节 */
-    if (len > MAX_PAYLOAD_LEN) return false;  /* 仍沿用你的上限 */
+            case ENUM_TRAFFIC_LIGHT_ABC_COLOR:
+                out->traffic_light_abc[0] = buf[3];
+                out->traffic_light_abc[1] = buf[4];
+                out->traffic_light_abc[2] = buf[5];
+                break;
 
-    uint8_t seq = (uint8_t)(g_seq++ & CTRL_SEQ_MASK);
-    uint8_t msg_crc = crc8_calc(data, len);
+            case ENUM_3D_DISPLAY_DATA1:
+                out->display_3d[0][0] = buf[3];
+                out->display_3d[0][1] = buf[4];
+                out->display_3d[0][2] = buf[5];
+                break;
 
-    /* 用 TX_REPEAT_COUNT 作为“整包重发次数” */
-    for (uint8_t attempt = 0; attempt < TX_REPEAT_COUNT; attempt++) {
+            case ENUM_3D_DISPLAY_DATA2:
+                out->display_3d[1][0] = buf[3];
+                out->display_3d[1][1] = buf[4];
+                out->display_3d[1][2] = buf[5];
+                break;
 
-        /* 1) META_START (len) */
-        SendFrame8((uint8_t)type, (uint8_t)(CTRL_META | seq), META_START, (uint8_t)len);
+            case ENUM_3D_DISPLAY_DATA3:
+                out->display_3d[2][0] = buf[3];
+                out->display_3d[2][1] = buf[4];
+                out->display_3d[2][2] = buf[5];
+                break;
 
-        /* 2) META_CRC8 */
-        SendFrame8((uint8_t)type, (uint8_t)(CTRL_META | seq), META_CRC8, msg_crc);
+            case ENUM_3D_DISPLAY_DATA4:
+                out->display_3d[3][0] = buf[3];
+                out->display_3d[3][1] = buf[4];
+                out->display_3d[3][2] = buf[5];
+                break;
 
-        /* 3) DATA[0..len-1] */
-        for (uint16_t i = 0; i < len; i++) {
-            uint8_t ctrl = seq;
-            if (i == 0)        ctrl |= CTRL_FIRST;
-            if (i == (len-1))  ctrl |= CTRL_LAST;
-            SendFrame8((uint8_t)type, ctrl, (uint8_t)i, data[i]);
-        }
+            case ENUM_BUS_STOP_TEMPERATURE:
+                out->bus_stop_temp[0] = buf[3];
+                out->bus_stop_temp[1] = buf[4];
+                break;
 
-        /* 4) 等 ACK（可选） */
-        if (ack_timeout_ms == 0) {
-            return true; /* 不等 ACK：直接认为发送完成 */
-        }
+            case ENUM_GARAGE_AB_FLOOR:
+                out->garage_ab_floor[0] = buf[3];
+                out->garage_ab_floor[1] = buf[4];
+                break;
 
-        if (WaitAck(type, seq, ack_timeout_ms)) {
-            return true; /* ✅ 收到 ACK_OK */
-        }
+            case ENUM_DISTANCE_MEASURE:
+                out->distance[0] = buf[3];
+                out->distance[1] = buf[4];
+                out->distance[2] = buf[5];
+                break;
 
-        /* 超时：进入下一轮 attempt，重发整包（同 seq） */
-    }
+            case ENUM_GARAGE_INIT_COORD:
+                out->garage_init_coord[0] = buf[3];
+                out->garage_init_coord[1] = buf[4];
+                out->garage_init_coord[2] = buf[5];
+                break;
 
-    return false; /* 多次尝试仍未收到 ACK */
-}
+            case ENUM_RANDOM_ROUTE_POINT1:
+                out->random_route[0][0] = buf[3];
+                out->random_route[0][1] = buf[4];
+                out->random_route[0][2] = buf[5];
+                break;
 
-/* 发送 GET 请求（META GET），保持你原有定义 */
-static inline void SendGet(DataType type, uint8_t seq)
-{
-    SendFrame8((uint8_t)type, (uint8_t)(CTRL_META | (seq & CTRL_SEQ_MASK)), META_GET, 0);
-}
+            case ENUM_RANDOM_ROUTE_POINT2:
+                out->random_route[1][0] = buf[3];
+                out->random_route[1][1] = buf[4];
+                out->random_route[1][2] = buf[5];
+                break;
 
-/* 被动等待（内部实现） */
-static uint8_t *WaitDataEx(DataType type, uint32_t timeout_ms, bool lock_seq, uint8_t seq)
-{
-    uint32_t elapsed = 0;
-    uint8_t pkt[8];
-    ParsedFrame f;
+            case ENUM_RANDOM_ROUTE_POINT3:
+                out->random_route[2][0] = buf[3];
+                out->random_route[2][1] = buf[4];
+                out->random_route[2][2] = buf[5];
+                break;
 
-    g_expect_type = (uint8_t)type;
-    g_expect_seq_valid = lock_seq;
-    g_expect_seq = (uint8_t)(seq & CTRL_SEQ_MASK);
+            case ENUM_RANDOM_ROUTE_POINT4:
+                out->random_route[3][0] = buf[3];
+                out->random_route[3][1] = buf[4];
+                out->random_route[3][2] = buf[5];
+                break;
 
-    rx_reset();
-
-    while (elapsed < timeout_ms) {
-        if (ZigbeeRead8(pkt)) {
-            if (ParseFrame(pkt, &f)) {
-                if (rx_consume_frame(&f)) {
-                    /* 完成一条消息 */
-                    g_expect_type = 0xFF;
-                    g_expect_seq_valid = false;
-                    return g_rx_buf;
-                }
+            default:
+                break;
             }
+
+            received_any = true;
+            last_rx_ms = get_ms();
+
+        } else {
+            delay_ms(1);
         }
-
-        delay_ms(1);
-        elapsed++;
     }
-
-    g_expect_type = 0xFF;
-    g_expect_seq_valid = false;
-    return NULL;
-}
-
-/*
- * 主动请求：发 GET，然后等对方返回（限定 seq，避免读到别的响应）
- */
-uint8_t *GetData(DataType type, uint32_t timeout_ms)
-{
-    uint8_t seq = (uint8_t)(g_seq++ & CTRL_SEQ_MASK);
-    SendGet(type, seq);
-
-    /* 等待响应消息（对方应使用同一 seq 回传） */
-    return WaitDataEx(type, timeout_ms, true, seq);
-}
-
-/*
- * 被动等待：不主动发 GET，不锁 seq（收到任意 seq 的一条完整消息就返回）
- * type=0xFF 表示接收任意类型
- */
-uint8_t *WaitData(DataType type, uint32_t timeout_ms)
-{
-    return WaitDataEx(type, timeout_ms, false, 0);
 }

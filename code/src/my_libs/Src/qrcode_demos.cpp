@@ -8,6 +8,15 @@
 #include "algorithm.hpp"
 #include "qrcode_demos.hpp"
 
+#define LOG_QRCODE_EN 1
+
+#if LOG_QRCODE_EN
+  #define log_qr(fmt, ...)  LOG_P("[QRCODE] " fmt "\r\n", ##__VA_ARGS__)
+#else
+  #define log_qr(...)  do {} while(0)
+#endif
+
+
 void qrcodeProcess(void) {
 	const uint8_t *qr_data1;
 	const uint8_t *qr_data2;
@@ -18,7 +27,7 @@ void qrcodeProcess(void) {
 	qr_data1 = qr_get_typed_data(kQrType_Formula);
 	qr_data2 = qr_get_typed_data(kQrType_Bracket_All);
 	
-	LOG_P("d1 = %s, d2 = %s\n", qr_data1, qr_data2);
+	log_qr("d1 = %s, d2 = %s", qr_data1, qr_data2);
 
 	
 	// 算法A
@@ -35,10 +44,10 @@ void qrcodeProcess(void) {
 	char expr2[128];
 	if (bind_expr(expr2, sizeof(expr2), (const char *)qr_data1, vars, 3) == 0) {
 		double out;
-		LOG_P("expr2 = %s\n", expr2);
+		log_qr("expr2 = %s", expr2);
 		algo_calc_eval(expr2, &out);
 		a_res = (int)lround(out);
-		LOG_P("a_res = %d\n", a_res);
+		log_qr("a_res = %d", a_res);
 	}
 
 	//算法B
@@ -60,9 +69,8 @@ void qrcodeProcess(void) {
 	}
 
 	for (int i = 0; i < 6; i++) {
-		LOG_P("%d  ", b_res[i]);
+		log_qr("%d  ", b_res[i]);
 	}
-	LOG_P("\n");
 	if (s1) free(s1);
 	if (s2) free(s2);
 	if (arr1) free(arr1);

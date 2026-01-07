@@ -7,7 +7,7 @@ from fpioa_manager import fm
 # 0) Unified Debug Logger (简洁统一版)
 # =============================================================================
 # 总开关：False = 全部调试输出静音；True = 允许按 TAG 输出
-LOG_ALL = False
+LOG_ALL = True
 
 # 分模块开关（你以前的 DEBUG_xxx 统一到这里）
 LOG_TAG = {
@@ -15,7 +15,7 @@ LOG_TAG = {
     "SERVO":   False,
     "SENSOR":  False,
     "LINE":    False,
-    "QR":      False,
+    "QR":      True,
     "UART":    False,
     "MODE":    False,
 }

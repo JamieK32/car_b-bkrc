@@ -10,7 +10,13 @@
 #include "log.hpp"
 #include "k210_app.hpp"
 
-#define DEBUG_THIS 0
+#define LOG_K210_EN  0
+
+#if LOG_K210_EN
+  #define log_k210(fmt, ...)  LOG_P("[K210] " fmt "\r\n", ##__VA_ARGS__)
+#else
+  #define log_k210(...)  do {} while(0)
+#endif
 
 uint8_t g_qr_raw_slots[QRCODE_SLOTS][QRCODE_SLOT_SIZE];
 
@@ -95,7 +101,7 @@ void identifyQrCode_New(uint8_t slot_count)
         if (!K210_ReadFrame(&frame, K210_READ_VAR_LEN)) continue;
         handleQrFrame(&frame);
         K210_ClearRxByFrame(&frame);
-        LOG_P("QrCode Slot Index: %d\n", frame.var.var_id);
+        log_k210("QrCode Slot Index: %d", frame.var.var_id);
         if (frame.var.var_id >= slot_count - 1) break;
     }
 
