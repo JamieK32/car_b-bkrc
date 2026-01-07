@@ -118,6 +118,7 @@ void on_key_b_click(void) {
 
 void on_key_c_click(void) {
     log_main("key c pressed");
+        log_main("key c pressed2");
 }
 
 void on_key_d_click(void) {
