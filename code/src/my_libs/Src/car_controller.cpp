@@ -9,7 +9,7 @@
 #include <Command.h>
 #include "LED.h"
 #include "BKRC_Voice.h"
-
+#include "ultrasonic.hpp"
 
 #include <string.h>
 #include <stdlib.h>
@@ -33,13 +33,14 @@ static const uint16_t MILEAGE_MIN = 600;		   // 最小里程要求
 static const float OFFSET_MULTIPLIER = 34.0f;	   // 偏移量倍数
 static const uint16_t FINAL_DISTANCE = 630;	       // 最终前进距离
 
-
+/* ================== 陀螺仪直行常量 ================== */
 static const uint16_t GYRO_KP = 15;
 const float MAX_CORR = 100;           // 修正上限（按你PWM范围调）
 const float MIN_SPD  = -100;           // 最小速度（不想反转就设 0）
 const float MAX_SPD  = 100;          // 最大速度（按你SpeedCtr范围调）
 static euler_angles_t euler_angle;
 
+/* ================== 陀螺仪转向常量 ================== */
 const float KP_TURN     = 5.0f;
 const int16_t MIN_TURN  = 60;
 const int16_t MAX_TURN  = 90;
@@ -47,6 +48,13 @@ const float STOP_TH     = 2.0f;
 const uint8_t STABLE_N  = 8;
 const uint32_t TIMEOUT  = 5000;
 
+/* ================== 超声波闭环常量 ================== */
+const uint8_t MAX_SPEED = 40;      // 限制最大速度，防止速度过快
+const uint8_t MIN_SPEED = 15;       // 启动死区速度（电机能转动的最小速度）
+const float TOLERANCE = 0.5;        // 容差范围（cm），在 17.5~18.5 之间停止运行，防止抖动
+const float KP = 1;
+const float KI = 0.1;
+const float INTEGRAL_LIMIT = 10;
 
 /* ================== 底层功能（解耦） ================== */
 static inline void TurnSignal_On(TurnDirection dir);
@@ -239,6 +247,57 @@ void Car_BackIntoGarage_Gyro(int speed, int distance, float angle)
 {
     Car_Turn_Gryo(angle);
     Car_MoveBackward_Gyro(speed, distance, angle);
+}
+
+
+
+void Car_MoveToTarget(float targetDistance) {
+    float integral = 0; // 1. 定义积分变量
+    
+    // 如果你在头文件中没定义这些，可以在这里补充
+    // const float KI = 0.5; // 根据实际效果调试，通常比 KP 小很多
+    // const float INTEGRAL_LIMIT = 50; // 积分限幅，防止过度累加
+
+    while (true) {
+        // 1. 获取当前距离
+        float currentDistance = Ultrasonic_GetDistance();
+        
+        // 2. 计算误差
+        float error = currentDistance - targetDistance;
+
+        // 3. 退出条件
+        if (abs(error) <= TOLERANCE) {
+            DCMotor.Stop();  
+            break; 
+        }
+
+        // 4. 积分累加 (KI * error)
+        // 注意：只有当误差在一定范围内（或者一直存在）时累加
+        integral += error;
+
+        // 5. 积分限幅 (重要：防止积分饱和)
+        // 如果不限制，当小车被挡住时，integral 会变无限大，移开障碍物后小车会突然猛冲
+        integral = constrain(integral, -INTEGRAL_LIMIT, INTEGRAL_LIMIT);
+
+        // 6. 计算 PI 输出
+        // Output = P项 + I项
+        float output = (KP * error) + (KI * integral);
+        
+        uint8_t moveSpeed = (uint8_t)constrain(abs(output), MIN_SPEED, MAX_SPEED);
+
+        // 7. 执行动作
+        if (error > 0) {
+            // 距离太远，向前
+            DCMotor.SpeedCtr(moveSpeed, moveSpeed);
+        } else {
+            // 距离太近，向后
+            DCMotor.SpeedCtr(-moveSpeed, -moveSpeed);
+        }
+
+        // 8. 采样周期控制
+        // PID 算法需要固定的时间间隔来保证积分和微分的物理意义
+        delay(30); 
+    }
 }
 
 /* ================== 底层功能（解耦） ================== */

@@ -163,10 +163,7 @@ void on_key_c_click(void) {
 }
 
 void on_key_d_click(void) {
-    while (1) {
-        int cm = Ultrasonic_GetDistanceMedian(5);
-        log_main("cm = %d", cm);
-    }
+    Car_MoveToTarget(18);
 }
 
 void btn_callback(void *btn_ptr) {
