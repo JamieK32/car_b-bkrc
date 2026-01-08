@@ -39,7 +39,6 @@ void _Infrare::Initialization(void)
 	pinMode(RITX_PIN, OUTPUT);
 	digitalWrite(RITX_PIN, TXD_OFF);
 	//pin = _pin;
-
 }
 
 /***************************************************************

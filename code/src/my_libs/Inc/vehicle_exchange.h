@@ -57,6 +57,12 @@ typedef enum
     ENUM_RANDOM_ROUTE_POINT3,        // 随机路线点位3（三位数据）
     ENUM_RANDOM_ROUTE_POINT4,        // 随机路线点位4（三位数据）
 
+    ENUM_RFID_DATA1,
+    ENUM_RFID_DATA2,
+    ENUM_RFID_DATA3,
+    ENUM_RFID_DATA4,
+    ENUM_RFID_DATA5,
+    ENUM_RFID_DATA6,
 
     ENUM_DATA_MAX                    // 枚举结束标志
 } CarDataEnum;
@@ -94,7 +100,7 @@ typedef struct
 
     uint8_t traffic_light_abc[3];    // 交通灯ABC颜色
 
-    uint8_t display_3d[4][3];        // 立体显示数据 1~4
+    uint8_t display_3d[12];          // 立体显示数据 1~4
 
     uint8_t bus_stop_temp[2];        // 公交站天气温度
     uint8_t garage_ab_floor[2];      // 车库 AB 层数
@@ -102,8 +108,9 @@ typedef struct
     uint8_t distance[3];             // 测距
     uint8_t garage_init_coord[3];    // 初始车库坐标
 
-    uint8_t random_route[4][3];      // 随机路线点位 1~4
-
+    uint8_t random_route[12];        // 随机路线点位 1~4
+    
+    uint8_t rfid[16];                // 读卡数据
 } ProtocolData_t;
 
 

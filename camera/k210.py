@@ -15,7 +15,7 @@ LOG_TAG = {
     "SERVO":   False,
     "SENSOR":  False,
     "LINE":    False,
-    "QR":      True,
+    "QR":      False,
     "UART":    False,
     "MODE":    False,
 }
@@ -252,17 +252,10 @@ class TrafficLightDetector:
 # 8) Line Tracker
 # =============================================================================
 class LineTracker:
-    LINE_THRESHOLDS = [
-        [(53, 0)], [(53, 0)],
-        [(90, 0, 127, -128, -128, 127)],
-        [(95, 0, 127, -128, -128, 127)],
-        [(90, 0, 127, -128, -128, 127)],
-        [(90, 0, 127, -128, -128, 127)],
-        [(80, 0, 127, -128, -128, 127)],
-        [(53, 0)]
-    ]
+    # 统一灰度阈值：0~72 认为是线(深色)
+    LINE_THRESHOLD = (0, 72)
 
-    def __init__(self, uart_comm, debug=False, roi_y=170, roi_h=70, roi_width_ratio=0.83):
+    def __init__(self, uart_comm, debug=False, roi_y=170, roi_h=70, roi_width_ratio=0.75):
         self.uart_comm = uart_comm
         self.debug = debug
         self.roi_y = roi_y
@@ -270,7 +263,7 @@ class LineTracker:
         self.roi_width_ratio = roi_width_ratio
 
     def _rois(self, w):
-        total_w = int(w * self.roi_width_ratio)
+        total_w = int(w * self.roi_width_ratio)   # 保留缩放：总ROI宽度占比
         roi_w = total_w // 8
         start_x = (w - total_w) // 2
         return [(start_x + i * roi_w, self.roi_y, roi_w, self.roi_h) for i in range(8)]
@@ -287,7 +280,8 @@ class LineTracker:
 
         mask = 0
         for i, roi in enumerate(rois):
-            if img.find_blobs(self.LINE_THRESHOLDS[i], roi=roi, pixels_threshold=50):
+            # GRAYSCALE 下 find_blobs 需要 thresholds 是 list：[(min,max)]
+            if img.find_blobs([self.LINE_THRESHOLD], roi=roi, pixels_threshold=50):
                 mask |= 1 << (7 - i)
 
         self.uart_comm.send_cmd(Protocol.CMD_TRACE_RESULT, mask, 0)
@@ -297,11 +291,10 @@ class LineTracker:
         if self.debug:
             log("LINE", "Bitmask: 0x{:02X}".format(mask))
 
+
 # =============================================================================
 # 9) QR Code Processor (保留槽位发送 + 舵机点头 + ROI轮询)
 # =============================================================================
-
-
 class QRCodeProcessor:
     def __init__(self, sensor_mgr, uart_comm, servo_ctrl, debug=False, max_slots=3, varid_offset=0):
         self.sensor_mgr = sensor_mgr
@@ -314,9 +307,6 @@ class QRCodeProcessor:
         self.varid_offset = varid_offset
         self.payload_to_slot = {}
         self.next_slot = 0
-
-        # 固定的高效扫描区域 (经测试效果最好)
-        self.fixed_roi = (59, 10, 228, 223)
 
     def reset_slots(self):
         """重置已识别的二维码记录，为下一次扫描做准备"""
@@ -359,7 +349,7 @@ class QRCodeProcessor:
         # 2. 舵机点头参数控制
         angle = -9
         scan_dir = 1
-        scan_min, scan_max = 0, 5
+        scan_min, scan_max = 3, 8
         last_move = 0
         MOVE_INTERVAL = 100
         ANGLE_STEP = 0.2
@@ -391,17 +381,12 @@ class QRCodeProcessor:
             img = sensor.snapshot()
 
             # 采用固定 ROI 提高帧率和成功率
-            res = img.find_qrcodes(roi=self.fixed_roi, x_stride=1)
+            res = img.find_qrcodes(x_stride=1)
 
             if res:
                 for code in res:
                     payload = code.payload()
-
-                    # 只有在调试模式下才画框，节省开销
-                    if self.debug:
-                        img.draw_rectangle(code.rect(), color=(255, 0, 0), thickness=3)
-                        img.draw_rectangle(self.fixed_roi, color=(0, 255, 0), thickness=2)
-
+                    img.draw_rectangle(code.rect(), color=(255, 0, 0), thickness=3)
                     # 分配槽位并发送数据
                     self._send_payload_with_slot(payload)
 

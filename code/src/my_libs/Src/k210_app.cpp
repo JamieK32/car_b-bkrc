@@ -70,6 +70,7 @@ uint8_t identifyTraffic_New(TrafficID id)
         K210_ClearRxByFrame(&frame);
         if (frame.cmd == CMD_TRAFFIC_RESULT)
         {
+            log_k210("cmd ok %d", frame.cmd);
             result = frame.fixed.data1;
             Zigbee_Traffic_SetColor(id, (TrafficColor)result);
             K210_SendCmd(CMD_TRAFFIC_STOP, 0, 0);
@@ -84,6 +85,7 @@ uint8_t identifyTraffic_New(TrafficID id)
     }
 
     Servo_SetAngle(SERVO_DEFAULT_ANGLE);
+    log_k210("result = %d", result);
     return result;
 }
 

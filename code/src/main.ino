@@ -7,7 +7,6 @@
 #include "BH1750.h"
 #include "Command.h"
 #include "BEEP.h"
-#include "Ultrasonic.h"
 #include "Drive.h"
 #include "infrare.h"
 #include "BKRC_Voice.h"
@@ -33,6 +32,7 @@
 #include "multi_button.h"
 #include "button_user.h"
 #include "qrcode_datamap.hpp"
+#include "ultrasonic.hpp"
 
 // 各种演示
 #include "qrcode_demos.hpp"
@@ -42,7 +42,7 @@
 #if LOG_MAIN_EN
   #define log_main(fmt, ...)  LOG_P("[MAIN] " fmt "\r\n", ##__VA_ARGS__)
   #define alarm_fail()  do { BEEP.ToggleNTimes(3, 120); } while(0)
-  #define alarm_log1()   do { BEEP.ToggleNTimes(2, 120); } while(0)
+  #define alarm_log1()   do { BEEP.ToggleNTimes(1, 120); } while(0)
   #define alarm_log2()   do { BEEP.ToggleNTimes(2, 120); } while(0)
 #else
   #define log_main(...) do {} while(0)
@@ -87,7 +87,7 @@ void on_key_a_click(void) {
         size_t cap = 4 * 3;    
         if (n > cap) n = cap;
         for (size_t i = 0; i < n; i++) {
-            data.random_route[i / 3][i % 3] = (uint8_t)str[i];
+            data.random_route[i] = (uint8_t)str[i];
         }
     }
     if (!SendData(&data)) {
@@ -139,17 +139,22 @@ void on_key_c_click(void) {
     uint8_t *qr_data1 = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT); 
     uint8_t qr_data1_len = qr_get_typed_len(kQrType_Bracket_LT);
     if (qr_data1 && qr_data1_len) {
+        log_main("%s", (const char *)qr_data1);
         qr_data1 = (uint8_t *)algo_extract_bracket((const char*)qr_data1, '<');
         uint8_t route_len = qr_data1_len - 6;
         uint8_t route_str[12];
+        uint8_t route = 0;
         for (int i = 0; i < route_len; i++) {
             route_str[i] = qr_data1[2 + i];
         }
         route_str[route_len] = '\0';
-        log_main("%s", (const char *)route_str);
-        for (int i = 0; i < route_len; i++) {
-            data.random_route[i / 3][i % 3] = route_str[i];
+        if (strstr((const char *)route_str, "B4") != NULL) {
+            route = 1;
+        } else if (strstr((const char *)route_str, "D2") != NULL) {
+            route = 2;
         }
+        log_main("%s, %d", (const char *)route_str, route);
+        data.random_route[0] = route;
         if (!SendData(&data)) {
             alarm_fail();
         }
@@ -158,10 +163,11 @@ void on_key_c_click(void) {
 }
 
 void on_key_d_click(void) {
-
+    while (1) {
+        int cm = Ultrasonic_GetDistanceMedian(5);
+        log_main("cm = %d", cm);
+    }
 }
-
-
 
 void btn_callback(void *btn_ptr) {
     alarm_log1();
@@ -190,10 +196,10 @@ void setup()
 	BH1750.Initialization();            // 光强
 	BEEP.Initialization();              // 任务板蜂鸣器
 	Infrare.Initialization();           // 红外
-	Ultrasonic.Initialization();        //超声波
 	DCMotor.Initialization();           //电机
 	BKRC_Voice.Initialization();        //小创初始化
 	// C库用户维护
+    Ultrasonic_Init();
 	Log_Init(115200);//串口初始化
 	K210_SerialInit();
 	Servo_SetAngle(SERVO_DEFAULT_ANGLE);

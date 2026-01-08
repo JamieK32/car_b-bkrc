@@ -6,7 +6,6 @@
 #include "Drive.h"
 #include "CoreBeep.h"
 #include "BEEP.h"
-#include <Ultrasonic.h>
 #include <Command.h>
 #include "LED.h"
 #include "BKRC_Voice.h"

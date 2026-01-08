@@ -157,13 +157,13 @@ bool SendData(ProtocolData_t *inout)
 
     /* 立体显示 4组（三位） */
     send_item_if_nonzero_and_clear(ENUM_3D_DISPLAY_DATA1,
-                                   &inout->display_3d[0][0], &inout->display_3d[0][1], &inout->display_3d[0][2]);
+                                   &inout->display_3d[0], &inout->display_3d[1], &inout->display_3d[2]);
     send_item_if_nonzero_and_clear(ENUM_3D_DISPLAY_DATA2,
-                                   &inout->display_3d[1][0], &inout->display_3d[1][1], &inout->display_3d[1][2]);
+                                   &inout->display_3d[3], &inout->display_3d[4], &inout->display_3d[5]);
     send_item_if_nonzero_and_clear(ENUM_3D_DISPLAY_DATA3,
-                                   &inout->display_3d[2][0], &inout->display_3d[2][1], &inout->display_3d[2][2]);
+                                   &inout->display_3d[6], &inout->display_3d[7], &inout->display_3d[8]);
     send_item_if_nonzero_and_clear(ENUM_3D_DISPLAY_DATA4,
-                                   &inout->display_3d[3][0], &inout->display_3d[3][1], &inout->display_3d[3][2]);
+                                   &inout->display_3d[9], &inout->display_3d[10], &inout->display_3d[11]);
 
     /* 2位数据（b0/b1，b2补0） */
     send_item_u16bytes_if_nonzero_and_clear(ENUM_BUS_STOP_TEMPERATURE, inout->bus_stop_temp);
@@ -178,13 +178,26 @@ bool SendData(ProtocolData_t *inout)
 
     /* 随机路线 4组（三位） */
     send_item_if_nonzero_and_clear(ENUM_RANDOM_ROUTE_POINT1,
-                                   &inout->random_route[0][0], &inout->random_route[0][1], &inout->random_route[0][2]);
+                                   &inout->random_route[0], &inout->random_route[1], &inout->random_route[2]);
     send_item_if_nonzero_and_clear(ENUM_RANDOM_ROUTE_POINT2,
-                                   &inout->random_route[1][0], &inout->random_route[1][1], &inout->random_route[1][2]);
+                                   &inout->random_route[3], &inout->random_route[4], &inout->random_route[5]);
     send_item_if_nonzero_and_clear(ENUM_RANDOM_ROUTE_POINT3,
-                                   &inout->random_route[2][0], &inout->random_route[2][1], &inout->random_route[2][2]);
+                                   &inout->random_route[6], &inout->random_route[7], &inout->random_route[8]);
     send_item_if_nonzero_and_clear(ENUM_RANDOM_ROUTE_POINT4,
-                                   &inout->random_route[3][0], &inout->random_route[3][1], &inout->random_route[3][2]);
+                                   &inout->random_route[9], &inout->random_route[10], &inout->random_route[11]);
+
+    bool rfid_any = false;
+    for (int i=0;i<16;i++) if (inout->rfid[i] != 0) { rfid_any = true; break; }
+    if (rfid_any) {
+        send_frame_repeat(ENUM_RFID_DATA1, inout->rfid[0],  inout->rfid[1],  inout->rfid[2]);
+        send_frame_repeat(ENUM_RFID_DATA2, inout->rfid[3],  inout->rfid[4],  inout->rfid[5]);
+        send_frame_repeat(ENUM_RFID_DATA3, inout->rfid[6],  inout->rfid[7],  inout->rfid[8]);
+        send_frame_repeat(ENUM_RFID_DATA4, inout->rfid[9],  inout->rfid[10], inout->rfid[11]);
+        send_frame_repeat(ENUM_RFID_DATA5, inout->rfid[12], inout->rfid[13], inout->rfid[14]);
+        send_frame_repeat(ENUM_RFID_DATA6, inout->rfid[15], 0, 0);
+    }
+    memset(inout->rfid, 0, 16);
+
 
     return true;
 }
@@ -319,27 +332,27 @@ bool WaitData(ProtocolData_t *out, uint32_t timeout_ms)
                 break;
 
             case ENUM_3D_DISPLAY_DATA1:
-                out->display_3d[0][0] = buf[3];
-                out->display_3d[0][1] = buf[4];
-                out->display_3d[0][2] = buf[5];
+                out->display_3d[0] = buf[3];
+                out->display_3d[1] = buf[4];
+                out->display_3d[2] = buf[5];
                 break;
 
             case ENUM_3D_DISPLAY_DATA2:
-                out->display_3d[1][0] = buf[3];
-                out->display_3d[1][1] = buf[4];
-                out->display_3d[1][2] = buf[5];
+                out->display_3d[3] = buf[3];
+                out->display_3d[4] = buf[4];
+                out->display_3d[5] = buf[5];
                 break;
 
             case ENUM_3D_DISPLAY_DATA3:
-                out->display_3d[2][0] = buf[3];
-                out->display_3d[2][1] = buf[4];
-                out->display_3d[2][2] = buf[5];
+                out->display_3d[6] = buf[3];
+                out->display_3d[7] = buf[4];
+                out->display_3d[8] = buf[5];
                 break;
 
             case ENUM_3D_DISPLAY_DATA4:
-                out->display_3d[3][0] = buf[3];
-                out->display_3d[3][1] = buf[4];
-                out->display_3d[3][2] = buf[5];
+                out->display_3d[9] = buf[3];
+                out->display_3d[10] = buf[4];
+                out->display_3d[11] = buf[5];
                 break;
 
             case ENUM_BUS_STOP_TEMPERATURE:
@@ -365,29 +378,56 @@ bool WaitData(ProtocolData_t *out, uint32_t timeout_ms)
                 break;
 
             case ENUM_RANDOM_ROUTE_POINT1:
-                out->random_route[0][0] = buf[3];
-                out->random_route[0][1] = buf[4];
-                out->random_route[0][2] = buf[5];
+                out->random_route[0] = buf[3];
+                out->random_route[1] = buf[4];
+                out->random_route[2] = buf[5];
                 break;
 
             case ENUM_RANDOM_ROUTE_POINT2:
-                out->random_route[1][0] = buf[3];
-                out->random_route[1][1] = buf[4];
-                out->random_route[1][2] = buf[5];
+                out->random_route[3] = buf[3];
+                out->random_route[4] = buf[4];
+                out->random_route[5] = buf[5];
                 break;
 
             case ENUM_RANDOM_ROUTE_POINT3:
-                out->random_route[2][0] = buf[3];
-                out->random_route[2][1] = buf[4];
-                out->random_route[2][2] = buf[5];
+                out->random_route[6] = buf[3];
+                out->random_route[7] = buf[4];
+                out->random_route[8] = buf[5];
                 break;
 
             case ENUM_RANDOM_ROUTE_POINT4:
-                out->random_route[3][0] = buf[3];
-                out->random_route[3][1] = buf[4];
-                out->random_route[3][2] = buf[5];
+                out->random_route[9] = buf[3];
+                out->random_route[10] = buf[4];
+                out->random_route[11] = buf[5];
                 break;
-
+            case ENUM_RFID_DATA1:
+                out->rfid[0] = buf[3];
+                out->rfid[1] = buf[4];
+                out->rfid[2] = buf[5];
+                break;
+            case ENUM_RFID_DATA2:
+                out->rfid[3] = buf[3];
+                out->rfid[4] = buf[4];
+                out->rfid[5] = buf[5];
+                break;
+            case ENUM_RFID_DATA3:
+                out->rfid[6] = buf[3];
+                out->rfid[7] = buf[4];
+                out->rfid[8] = buf[5];
+                break;
+            case ENUM_RFID_DATA4:
+                out->rfid[9] = buf[3];
+                out->rfid[10] = buf[4];
+                out->rfid[11] = buf[5];
+                break;
+            case ENUM_RFID_DATA5:
+                out->rfid[12] = buf[3];
+                out->rfid[13] = buf[4];
+                out->rfid[14] = buf[5];
+                break;
+            case ENUM_RFID_DATA6:
+                out->rfid[15] = buf[3];
+                break;
             default:
                 break;
             }

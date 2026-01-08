@@ -136,9 +136,9 @@
 #define LOG_K210_PROTOCOL_EN 0
 
 #if LOG_K210_PROTOCOL_EN
-  #define log_k210(fmt, ...)  LOG_P("[K210_PROTOCOL] " fmt "\r\n", ##__VA_ARGS__)
+  #define log_protocol(fmt, ...)  LOG_P("[K210_PROTOCOL] " fmt "\r\n", ##__VA_ARGS__)
 #else
-  #define log_k210(...)  do {} while(0)
+  #define log_protocol(...)  do {} while(0)
 #endif
 
 
@@ -247,7 +247,7 @@ void K210_SendCmd(uint8_t cmd, uint8_t data1, uint8_t data2)
         K210_PKT_TAIL          // 0xBB
     };
 
-    log_k210("K210 Send Pkt: %02X %02X %02X %02X %02X %02X %02X %02X",
+    log_protocol("K210 Send Pkt: %02X %02X %02X %02X %02X %02X %02X %02X",
           pkt[0], pkt[1], pkt[2], pkt[3],
           pkt[4], pkt[5], pkt[6], pkt[7]);
 
