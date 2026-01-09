@@ -72,6 +72,7 @@ bool ZigbeeRead8(uint8_t out8[8])
 
     uint8_t zero[8] = {0};
     ExtSRAMInterface.ExMem_Write_Bytes(RX_DATA_ADDR, zero, 8);
+    delay(50);
     return true;
 #endif
 }
