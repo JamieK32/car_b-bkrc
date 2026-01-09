@@ -21,11 +21,12 @@ class SensorManager:
         sensor.reset()
         sensor.set_vflip(1)
         sensor.set_hmirror(1) # 增加镜像以符合LCD直观显示
+        sensor.set_auto_gain(False, gain_db=12)
         sensor.set_framesize(sensor.QVGA)
 
     def init_qr_sensor(self):
         self._reset_qvga()
-        sensor.set_pixformat(sensor.GRAYSCALE) # 纸张扫描灰度优于RGB
+        sensor.set_pixformat(sensor.RGB565) # 纸张扫描灰度优于RGB
         # 严格遵循原代码参数: b=2, c=4, gain=12
         log("SENSOR", "QR init b=2 c=4")
 
@@ -92,7 +93,7 @@ class QRCodeProcessor:
 
             # 4. 捕捉图像
             img = sensor.snapshot()
-
+            img.lens_corr(1.8)
             # 在屏幕上画出固定的 ROI 框，方便对准
             img.draw_rectangle(self.fixed_roi, color=127, thickness=2)
 

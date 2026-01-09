@@ -59,10 +59,8 @@ void _BKRC_Voice:: Voice_Broadcast_Cmd(uint16_t cmd)
 }
 
 
-bool _BKRC_Voice::Voice_WaitFor(UartCb cb, uint16_t timeout_ms = 5000)
+uint8_t _BKRC_Voice::Voice_WaitFor(uint16_t timeout_ms = 5000)
 {
-    if (!cb) return false;
-
     uint8_t buf[VOICE_FRAME_LEN];
 
     // 关键：把 readBytes 的内部等待时间压到很小（比如 1ms）
@@ -77,13 +75,12 @@ bool _BKRC_Voice::Voice_WaitFor(UartCb cb, uint16_t timeout_ms = 5000)
             buf[0] == VOICE_HDR0 &&
             buf[1] == VOICE_HDR1)
         {
-            cb(buf[VOICE_PAYLOAD_IDX]);
-            return true; // 命中后通常就退出；如果你想继续等多个命中，就删掉 return
+            return buf[VOICE_PAYLOAD_IDX];
         }
 
         delay(1);
     }
-    return false;
+    return 0;
 }
 
 // 工具：发一个数字 0~9 的词条

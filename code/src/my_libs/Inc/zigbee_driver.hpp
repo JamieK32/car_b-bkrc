@@ -89,6 +89,7 @@ void Zigbee_LED_TimerControl(LedTimerControl state);
 
 void Zigbee_Bus_FullSync_System(const ZigbeeBusInfo *info);
 void Zigbee_Bus_SpeakPreset(uint8_t voice_id);
+void Zigbee_Bus_SpeakRandom(void);
 bool Zigbee_Bus_Read_Date(uint8_t* yy, uint8_t* mon, uint8_t* day, uint16_t wait_time = 800);
 bool Zigbee_Bus_Read_Time(uint8_t* hour, uint8_t* min, uint8_t* sec, uint16_t wait_time = 800);
 bool Zigbee_Bus_Read_Env(uint8_t* weather, int8_t* temp, uint16_t wait_time = 800);
@@ -100,6 +101,7 @@ void Zigbee_TFT_Display_Plate(TftId id, const char* plate);
 void Zigbee_TFT_Display_Distance(TftId id, uint16_t dist);
 void Zigbee_TFT_Timer_Control(TftId id, TftTimerAction action);
 void Zigbee_TFT_Display_Traffic_Sign(TftId id, TrafficSignType sign);
+void Zigbee_TFT_Display_Hex(TftId id, uint8_t hex1, uint8_t hex2, uint8_t hex3);
 
 void Zigbee_Wireless_Activate(uint8_t* keys);
 

@@ -31,7 +31,7 @@
 static const uint16_t MILEAGE_EXIT = 1800;		   // 退出里程阈值
 static const uint16_t MILEAGE_MIN = 600;		   // 最小里程要求
 static const float OFFSET_MULTIPLIER = 34.0f;	   // 偏移量倍数
-static const uint16_t FINAL_DISTANCE = 630;	       // 最终前进距离
+static const uint16_t FINAL_DISTANCE = 750;	       // 最终前进距离
 
 /* ================== 陀螺仪直行常量 ================== */
 static const uint16_t GYRO_KP = 15;
@@ -52,7 +52,7 @@ const uint32_t TIMEOUT  = 5000;
 const uint8_t MAX_SPEED = 40;      // 限制最大速度，防止速度过快
 const uint8_t MIN_SPEED = 15;       // 启动死区速度（电机能转动的最小速度）
 const float TOLERANCE = 0.5;        // 容差范围（cm），在 17.5~18.5 之间停止运行，防止抖动
-const float KP = 1;
+const float KP = 4;
 const float KI = 0.1;
 const float INTEGRAL_LIMIT = 10;
 

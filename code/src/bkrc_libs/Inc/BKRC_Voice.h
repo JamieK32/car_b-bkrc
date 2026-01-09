@@ -97,7 +97,6 @@ enum : uint16_t
 #define VOICE_PAYLOAD_IDX (2)
 
 
-typedef void (*UartCb)(uint8_t byte);
 
 
 class _BKRC_Voice
@@ -106,7 +105,7 @@ public:
 	_BKRC_Voice();
 	~_BKRC_Voice();
 	void Voice_Broadcast_Text(char text[]);
-	bool Voice_WaitFor(UartCb cb, uint16_t timeout_ms = 5000);
+	uint8_t Voice_WaitFor(uint16_t timeout_ms = 5000);
 	void Initialization(void);							
 	void Voice_Broadcast_Cmd(uint16_t cmd);
     void Voice_SpeakNumber(uint16_t num);

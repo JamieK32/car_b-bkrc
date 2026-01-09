@@ -322,6 +322,16 @@ void Zigbee_Bus_SpeakPreset(uint8_t voice_id /*1..7*/) {
     zigbee_send(pkg, 3, 50);
 }
 
+void Zigbee_Bus_SpeakRandom(void) {
+        uint8_t pkg[8] = {
+        0x55, 0x06, 0x20,
+        0x01, 0x00, 0x00,
+        0x00, 0xBB
+    };
+    pkg[6] = checksum_2_5(pkg);
+    zigbee_send(pkg, 3, 50);
+}
+
 // ========================== 公交站读取：内部工具 ==========================
 
 static inline uint8_t bcd_to_u8(uint8_t bcd)
@@ -512,6 +522,10 @@ void Zigbee_TFT_Display_Traffic_Sign(TftId id, TrafficSignType sign)
 
     _TFT_Send(id, 0x60, (uint8_t)sign, 0x00, 0x00);
 }
+
+void Zigbee_TFT_Display_Hex(TftId id, uint8_t hex1, uint8_t hex2, uint8_t hex3) {
+    _TFT_Send(id, 0x40, hex1, hex2, hex3);
+}   
 
 /**
  * @brief  激活无线电

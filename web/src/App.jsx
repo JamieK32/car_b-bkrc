@@ -52,6 +52,14 @@ const App = () => {
   const [parsedPath, setParsedPath] = useState([]);
   const [draggedItem, setDraggedItem] = useState(null);
   const [movingIdx, setMovingIdx] = useState(null);
+  const [turnMode, setTurnMode] = useState('relative'); // relative: Car_Turn, absolute: Car_Turn_Gryo
+
+  const wrap180 = (deg) => {
+    let a = deg;
+    while (a > 180) a -= 360;
+    while (a < -180) a += 360;
+    return a;
+  };
 
   // 解析路径
   useEffect(() => {
@@ -80,6 +88,9 @@ const App = () => {
     
     let code = "void Car_RunPath(void) {\n";
     code += "    uint8_t speed_val = 30; // 局部速度变量\n\n";
+
+    // 绝对角模式：假设起点朝向为 0°（归零后），后续转向用绝对 yaw 累积表示
+    let absYaw = 0;
     
     for (let i = 0; i < parsedPath.length - 1; i++) {
       const current = parsedPath[i];
@@ -116,14 +127,30 @@ const App = () => {
         // 叉乘计算转向 (y 轴向下)
         const crossProduct = v1.x * v2.y - v1.y * v2.x;
         
-        if (crossProduct > 0) {
-          code += `    Car_Turn(90);  // 右转 90°\n`;
-        } else if (crossProduct < 0) {
-          code += `    Car_Turn(-90); // 左转 90°\n`;
+        if (turnMode === 'relative') {
+          if (crossProduct > 0) {
+            code += `    Car_Turn(90);  // 右转 90°\n`;
+          } else if (crossProduct < 0) {
+            code += `    Car_Turn(-90); // 左转 90°\n`;
+          } else {
+            const dotProduct = v1.x * v2.x + v1.y * v2.y;
+            if (dotProduct < -0.5) {
+              code += `    Car_Turn(180); // 掉头\n`;
+            }
+          }
         } else {
-          const dotProduct = v1.x * v2.x + v1.y * v2.y;
-          if (dotProduct < -0.5) {
-            code += `    Car_Turn(180); // 掉头\n`;
+          if (crossProduct > 0) {
+            absYaw = wrap180(absYaw + 90);
+            code += `    Car_Turn_Gryo(${absYaw});  // 右转到 ${absYaw}°\n`;
+          } else if (crossProduct < 0) {
+            absYaw = wrap180(absYaw - 90);
+            code += `    Car_Turn_Gryo(${absYaw}); // 左转到 ${absYaw}°\n`;
+          } else {
+            const dotProduct = v1.x * v2.x + v1.y * v2.y;
+            if (dotProduct < -0.5) {
+              absYaw = wrap180(absYaw + 180);
+              code += `    Car_Turn_Gryo(${absYaw}); // 掉头到 ${absYaw}°\n`;
+            }
           }
         }
       }
@@ -131,7 +158,7 @@ const App = () => {
     
     code += "}";
     return code;
-  }, [parsedPath]);
+  }, [parsedPath, turnMode]);
 
   const handleDrop = (e, row, col) => {
     e.preventDefault();
@@ -207,6 +234,28 @@ const App = () => {
           <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-2 text-center underline">
             坐标系：行(G-A) | 列(7-1)
           </label>
+          <div className="flex gap-2 mb-3">
+            <button
+              onClick={() => setTurnMode('relative')}
+              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                turnMode === 'relative'
+                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                  : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              相对角度 (Car_Turn)
+            </button>
+            <button
+              onClick={() => setTurnMode('absolute')}
+              className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${
+                turnMode === 'absolute'
+                  ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                  : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
+              }`}
+            >
+              绝对角度 (Car_Turn_Gryo)
+            </button>
+          </div>
           <textarea
             value={pathInput}
             onChange={(e) => setPathInput(e.target.value)}

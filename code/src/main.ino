@@ -121,12 +121,57 @@ void on_key_a_click(void) {
 }
 
 
+
 void on_key_b_click(void) {
-    ZigbeeBusInfo info;
-    Zigbee_Bus_Read_All(&info, 1000);
-    PrintBusInfo(&info);
-    BKRC_Voice.Voice_SpeakWeather(info.weather);
-    BKRC_Voice.Voice_SpeakTemperature(info.temp);
+    uint8_t speed_val = 88; // 局部速度变量
+    int sl_gear = 0;
+    int n = 1;
+    uint8_t fht_key[6];
+    // 路径段: D1 -> D2
+    LSM6DSV16X_RezeroYaw_Fresh(200); // 陀螺仪归零
+    Car_MoveForward(speed_val, 1200); // 发车段特殊指令
+    Car_Turn_Gryo(-90); // 左转 90°
+    identifyTraffic_New(TRAFFIC_A);
+    // 路径段: D2 -> B2
+    Car_TrackToCross(speed_val);
+    Car_MoveToTarget(18);
+    if (!identifyQrCode_New(2)) {
+        alarm_fail();
+    } else {
+        alarm_log2();
+        qr_data_map();
+        uint8_t *qr_data = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT);
+        uint8_t qr_data_len  = qr_get_typed_len(kQrType_Bracket_LT);
+        if (qr_data && qr_data_len) {
+            sort_u8_asc(qr_data, qr_data_len);
+            for (int i = 0; i < 6; i++) {
+                fht_key[i] = qr_data[i];
+            }
+        }
+    }
+    Car_MoveBackward(70, 350);
+    Car_Turn_Gryo(0); // 左转 90°
+    Zigbee_Gate_SetState(true);
+    // 路径段: B2 -> B4
+    Car_TrackToCross(speed_val);
+     Zigbee_Gate_SetState(false);
+    Car_Turn_Gryo(-90); // 左转 90°
+    sl_gear = Infrared_Street_Light_GetGear();
+    Infrared_Street_Light_Set(n);
+    Car_Turn_Gryo(90); // 左转 90°
+    identifyTraffic_New(TRAFFIC_B);
+    // 路径段: B4 -> D4
+    Car_TrackToCross(speed_val);
+    Zigbee_Bus_SpeakRandom();
+    uint8_t data = BKRC_Voice.Voice_WaitFor() - 5;
+    Zigbee_TFT_Display_Hex(TFT_ID_B, 0, 0, data);
+    // 路径段: D4 -> F4
+    Car_TrackToCross(speed_val);
+    Car_Turn_Gryo(180); 
+    // 路径段: F4 -> F2
+    Car_TrackToCross(speed_val);
+    // 路径段: F2 -> F1
+    Car_BackIntoGarage_Gyro(30, 1400, 0); //倒车入库
 }
 
 void on_key_c_click(void) {
@@ -163,7 +208,7 @@ void on_key_c_click(void) {
 }
 
 void on_key_d_click(void) {
-    Car_MoveToTarget(18);
+    identifyQrCode_New(2);                          
 }
 
 void btn_callback(void *btn_ptr) {
