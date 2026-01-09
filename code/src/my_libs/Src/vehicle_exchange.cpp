@@ -46,7 +46,7 @@ static void send_frame_repeat(uint8_t type, uint8_t b0, uint8_t b1, uint8_t b2)
 
 void Send_Start_Cmd(void)
 {
-    send_frame_repeat((uint8_t)CMD_START, 0, 0, 0);
+    send_frame_repeat(CMD_START1, CMD_START2, CMD_START3, CMD_START4);
 }
 
 bool Wait_Start_Cmd(uint32_t timeout_ms)
@@ -59,7 +59,7 @@ bool Wait_Start_Cmd(uint32_t timeout_ms)
         if (ZigbeeRead8(buf)) {
             if (!frame_valid(buf)) continue;
 
-            if (buf[2] == (uint8_t)CMD_START) {
+            if (buf[2] == CMD_START1 && buf[3] == CMD_START2 && buf[4] == CMD_START3 && buf[5] == CMD_START4) {
                 return true;
             }
         } else {

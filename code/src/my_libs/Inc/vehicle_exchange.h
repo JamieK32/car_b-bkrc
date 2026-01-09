@@ -7,7 +7,10 @@
 #include "zigbee_frame_io.h"
 
 typedef enum {
-    CMD_START = 0x01,
+    CMD_START1 = 0x12,
+    CMD_START2,
+    CMD_START3,
+    CMD_START4,
 } ControlCmd;
 
 typedef enum
