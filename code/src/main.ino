@@ -52,78 +52,112 @@
 #endif
 
 void on_key_a_click(void) {
-    uint8_t my_weather = 0;
-    int8_t my_temp = 0;  
-    uint8_t light_gear = 0;
-    ProtocolData_t data;
-    uint8_t speed_val = 82;
-    const char str[] = "B1B2B5B4";
+ProtocolData_t data;
+    ProtocolData_t receive;
+    #define speed_val 82
+    int count=0;
     LSM6DSV16X_RezeroYaw_Fresh(200); 
-    if (!Wait_Start_Cmd(1000)) {
-        alarm_fail();
-    }
-    Zigbee_Garage_Ctrl(GARAGE_TYPE_B, 1, true);
-    Car_MoveForward(speed_val, 1350); 
-    if (!Zigbee_Bus_Read_Env(&my_weather, &my_temp)) {
-        alarm_fail();
-    }
-    Car_Turn_Gryo(-90);
-    light_gear = my_temp % 4 + 1;
-    Infrared_Street_Light_Set(light_gear);
-    Car_Turn_Gryo(90);
+    // Wait_Start_Cmd(60000);
+
+    Zigbee_Garage_Ctrl(GARAGE_TYPE_B, 1);
+    Car_MoveForward(speed_val, 1420);
+
+    data.traffic_light_abc[count++]=identifyTraffic_New(TRAFFIC_A);
     Car_TrackToCross(speed_val);
-    data.traffic_light_abc[TRAFFIC_A] = identifyTraffic_New(TRAFFIC_A);
-    if (!SendData(&data)) {
+
+    // Segment: Node2 -> Node3
+    data.traffic_light_abc[count++]=identifyTraffic_New(TRAFFIC_B);
+    Car_TrackToCross(speed_val);
+
+    Car_MoveToTarget(18);
+    if (!identifyQrCode_New(1)) {
         alarm_fail();
-    }
-    Car_Turn_Gryo(180);
-    Car_MoveForward(60,300);
-    Car_MoveBackward(60, 300);
-    if (!identifyQrCode_New(3)) {
-        alarm_fail();
-    }  
-    if (str) {
-        size_t n = strlen(str);
-        size_t cap = 4 * 3;    
-        if (n > cap) n = cap;
-        for (size_t i = 0; i < n; i++) {
-            data.random_route[i] = (uint8_t)str[i];
+    }else{
+        qr_data_map();
+        uint8_t *qr_data1 = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT); 
+       
+        if (qr_data1) {
+            int count=0;
+            for(int i=2;i<strlen((char*)qr_data1);i+=2){
+                if(qr_data1[i]>qr_data1[i+10]){
+                    data.wireless_charge_code[count++]=qr_data1[i];
+                }else{
+                    data.wireless_charge_code[count++]=qr_data1[i+10];
+                }
+                if(count==4)break;
+            }
         }
     }
-    if (!SendData(&data)) {
+
+    Car_MoveBackward(speed_val, 300);
+    
+    // Segment: Node3 -> Node4
+    Car_Turn_Gryo(-90);
+    Car_MoveForward_Gyro(85, 2500, -90); // 越野地形模式
+
+    data.traffic_light_abc[count++]=identifyTraffic_New(TRAFFIC_C);
+    //Car_TrackToCross(speed_val);
+
+    // Segment: Node4 -> Node5
+    Car_Turn_Gryo(-180);
+
+    // Send_Start_Cmd();
+    // if(Wait_Start_Cmd(60000)){
+    //     WaitData(&receive,10000);
+    //     for(int i=0;i<3;++i){
+    //         data.beacon_code[i]=receive.beacon_code[i];
+    //     }
+    //     alarm_log1();
+    // }
+
+    // if(Wait_Start_Cmd(60000)){
+    //    SendData(&data);
+    //    alarm_log1();
+    // }
+
+    // Zigbee_Gate_Display_LicensePlate((const char *)receive.car_plate); // 显示车牌
+    Zigbee_Gate_Display_LicensePlate("A12345");
+    Car_TrackToCross(speed_val);
+
+    // Segment: Node5 -> Node6
+    Car_Turn_Gryo(-90);
+    if (!identifyQrCode_New(3)) {
         alarm_fail();
+    }else{
+        qr_data_map();
+        uint8_t *qr_data1 = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT); 
+        uint8_t *qr_data2 = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT); 
+        if (qr_data1) {
+            int value=atoi((char*)qr_data1);
+            int n=sqrt(value);
+            data.street_light.final_level=n%4+1;
+        }
+        if(qr_data2){
+            for(int i=0;i<strlen((char*)qr_data2);++i){
+                data.beacon_code[3+i]=strtol((char*)qr_data2[i],NULL,16);        
+            }
+        }
     }
-    Car_Turn_Gryo(90);
-    Car_TrackToCross(speed_val);
-    if (!Wait_Start_Cmd(1000)) {
-        alarm_fail();
-    }
-    Car_Turn_Gryo(0); 
-    identifyTraffic_New(TRAFFIC_B);
-    Car_TrackToCross(speed_val);
-    Zigbee_Gate_Display_LicensePlate("A12345");	
-    Car_TrackToCross(speed_val);
-    Car_Turn_Gryo(90);
-    Car_MoveForward(60,300);		
-    if (!identifyQrCode_New(2)) {
-        alarm_fail();
-    }
-    Car_MoveBackward(60, 300);
-    Car_Turn_Gryo(-90); 
-    Car_TrackToCross(speed_val);
-    Car_MoveForward_Gyro(85, 1950, -90);
+
     Car_Turn_Gryo(-135);
-    Car_BackIntoGarage_Gyro(90, 1200, -180); //倒车入库
-    if (!Wait_Start_Cmd(1000)) {
-        alarm_fail();
-    }
-    Zigbee_Garage_Ctrl(GARAGE_TYPE_A, 3, false);
+    data.street_light.init_level=Infrared_Street_Light_GetGear();
+    Infrared_Street_Light_Set(data.street_light.final_level);
+
+    Car_Turn_Gryo(-180);
+    Car_TrackToCross(speed_val);
+    
+    Car_Turn_Gryo(-135);
+
+    Infrared_Activate_FHT(data.beacon_code,5);
+
+    Car_Turn_Gryo(-180);
+    
+
 }
 
 
 
 void on_key_b_click(void) {
-    uint8_t speed_val = 88; // 局部速度变量
     int sl_gear = 0;
     int n = 1;
     uint8_t fht_key[6];

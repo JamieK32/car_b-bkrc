@@ -253,7 +253,7 @@ class TrafficLightDetector:
 # =============================================================================
 class LineTracker:
     # 统一灰度阈值：0~72 认为是线(深色)
-    LINE_THRESHOLD = (0, 72)
+    LINE_THRESHOLD = (0, 100)
 
     def __init__(self, uart_comm, debug=False, roi_y=170, roi_h=70, roi_width_ratio=0.75):
         self.uart_comm = uart_comm
