@@ -57,9 +57,8 @@ ProtocolData_t data;
     #define speed_val 82
     int count=0;
     LSM6DSV16X_RezeroYaw_Fresh(200); 
-    // Wait_Start_Cmd(60000);
-
     Zigbee_Garage_Ctrl(GARAGE_TYPE_B, 1);
+    // Wait_Start_Cmd(60000);
     Car_MoveForward(speed_val, 1420);
 
     data.traffic_light_abc[count++]=identifyTraffic_New(TRAFFIC_A);
@@ -69,33 +68,12 @@ ProtocolData_t data;
     data.traffic_light_abc[count++]=identifyTraffic_New(TRAFFIC_B);
     Car_TrackToCross(speed_val);
 
-    Car_MoveToTarget(18);
-    if (!identifyQrCode_New(1)) {
-        alarm_fail();
-    }else{
-        qr_data_map();
-        uint8_t *qr_data1 = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT); 
-       
-        if (qr_data1) {
-            int count=0;
-            for(int i=2;i<strlen((char*)qr_data1);i+=2){
-                if(qr_data1[i]>qr_data1[i+10]){
-                    data.wireless_charge_code[count++]=qr_data1[i];
-                }else{
-                    data.wireless_charge_code[count++]=qr_data1[i+10];
-                }
-                if(count==4)break;
-            }
-        }
-    }
-
-    Car_MoveBackward(speed_val, 300);
-    
     // Segment: Node3 -> Node4
     Car_Turn_Gryo(-90);
-    Car_MoveForward_Gyro(85, 2500, -90); // 越野地形模式
+    Car_MoveForward_Gyro(85, 2340, -90); // 越野地形模式
 
     data.traffic_light_abc[count++]=identifyTraffic_New(TRAFFIC_C);
+    
     //Car_TrackToCross(speed_val);
 
     // Segment: Node4 -> Node5
@@ -116,43 +94,17 @@ ProtocolData_t data;
     // }
 
     // Zigbee_Gate_Display_LicensePlate((const char *)receive.car_plate); // 显示车牌
-    Zigbee_Gate_Display_LicensePlate("A12345");
     Car_TrackToCross(speed_val);
 
     // Segment: Node5 -> Node6
     Car_Turn_Gryo(-90);
-    if (!identifyQrCode_New(3)) {
-        alarm_fail();
-    }else{
-        qr_data_map();
-        uint8_t *qr_data1 = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT); 
-        uint8_t *qr_data2 = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT); 
-        if (qr_data1) {
-            int value=atoi((char*)qr_data1);
-            int n=sqrt(value);
-            data.street_light.final_level=n%4+1;
-        }
-        if(qr_data2){
-            for(int i=0;i<strlen((char*)qr_data2);++i){
-                data.beacon_code[3+i]=strtol((char*)qr_data2[i],NULL,16);        
-            }
-        }
-    }
 
     Car_Turn_Gryo(-135);
-    data.street_light.init_level=Infrared_Street_Light_GetGear();
-    Infrared_Street_Light_Set(data.street_light.final_level);
 
     Car_Turn_Gryo(-180);
     Car_TrackToCross(speed_val);
     
-    Car_Turn_Gryo(-135);
-
-    Infrared_Activate_FHT(data.beacon_code,5);
-
-    Car_Turn_Gryo(-180);
-    
-
+    Car_BackIntoGarage_Gyro(0); //倒车入库
 }
 
 
@@ -168,30 +120,12 @@ void on_key_b_click(void) {
     identifyTraffic_New(TRAFFIC_A);
     // 路径段: D2 -> B2
     Car_TrackToCross(speed_val);
-    Car_MoveToTarget(18);
-    if (!identifyQrCode_New(2)) {
-        alarm_fail();
-    } else {
-        alarm_log2();
-        qr_data_map();
-        uint8_t *qr_data = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT);
-        uint8_t qr_data_len  = qr_get_typed_len(kQrType_Bracket_LT);
-        if (qr_data && qr_data_len) {
-            sort_u8_asc(qr_data, qr_data_len);
-            for (int i = 0; i < 6; i++) {
-                fht_key[i] = qr_data[i];
-            }
-        }
-    }
-    Car_MoveBackward(70, 350);
     Car_Turn_Gryo(0); // 左转 90°
     Zigbee_Gate_SetState(true);
     // 路径段: B2 -> B4
     Car_TrackToCross(speed_val);
      Zigbee_Gate_SetState(false);
     Car_Turn_Gryo(-90); // 左转 90°
-    sl_gear = Infrared_Street_Light_GetGear();
-    Infrared_Street_Light_Set(n);
     Car_Turn_Gryo(90); // 左转 90°
     identifyTraffic_New(TRAFFIC_B);
     // 路径段: B4 -> D4
@@ -205,7 +139,7 @@ void on_key_b_click(void) {
     // 路径段: F4 -> F2
     Car_TrackToCross(speed_val);
     // 路径段: F2 -> F1
-    Car_BackIntoGarage_Gyro(30, 1400, 0); //倒车入库
+    Car_BackIntoGarage_Gyro(0); //倒车入库
 }
 
 void on_key_c_click(void) {
@@ -242,7 +176,10 @@ void on_key_c_click(void) {
 }
 
 void on_key_d_click(void) {
-    identifyQrCode_New(2);                          
+    while (1) {
+        log_main("mp = %d", DCMotor.Roadway_mp_Get());
+        delay(500);
+    }                
 }
 
 void btn_callback(void *btn_ptr) {

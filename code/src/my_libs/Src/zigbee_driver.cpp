@@ -72,58 +72,89 @@ void Zigbee_Traffic_SetColor(TrafficID id, TrafficColor color)
     zigbee_send(table[id][color]);
 }
 
-/**
- * @brief  Zigbee 车库控制重构 
- * @param  garage_type : 0 -> 车库A (0x0D), 1 -> 车库B (0x05)
- * @param  floor      : 0 -> 停止, 1-5 -> 前往对应楼层
- * @param  is_wait    : 是否原地等待到位
- */
-void Zigbee_Garage_Ctrl(GarageType garage_type, int floor, bool is_wait = false, uint16_t wait_time = 8000)  
-{
-    static const uint8_t ID_TABLE[] = { 0x0D, 0x05 }; 
-    uint8_t cmd[8] = { 0x55, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xBB };
-    if (garage_type > 1) return;
-    cmd[1] = ID_TABLE[garage_type];
-    cmd[3] = (uint8_t)floor;
-    uint16_t sum = 0;
-    for (int i = 2; i < 6; i++) { 
-        sum += cmd[i]; 
-    }
-    cmd[6] = (uint8_t)(sum % 256);
-    zigbee_send(cmd); 
-    // --- 后续到位等待检测 ---
-    if (is_wait) {
-        uint8_t feedback[ZIGBEE_FRAME_LEN];
-        unsigned long start = millis();
+/* ========================================================================== */
+/*                                立体车库控制 (修正版以匹配 main.ino)         */
+/* ========================================================================== */
 
-        while (millis() - start < wait_time) {
-            if (zigbee_recv(feedback)) {
-                if (feedback[1] == ID_TABLE[garage_type] && feedback[3] == (uint8_t)floor) {
-                    break;
-                }
-            }
-        }
-    }
+// 内部辅助：ID转换
+static inline uint8_t _garage_get_id(GarageType type) {
+    return (type == GARAGE_TYPE_A) ? 0x0D : 0x05;
 }
 
-uint8_t Zigbee_Garage_Get(GarageType type, uint16_t wait_time = 8000) {
-    if (type == GARAGE_TYPE_A) {
-        zigbee_send(Drive.GarageA_Get_Floor);
-    } else if (type == GARAGE_TYPE_B) {
-        zigbee_send(Drive.GarageB_Get_Floor);
-    }
+/**
+ * @brief 获取车库当前层数
+ * 注意：保留原名 Zigbee_Get_Floor 以兼容 main.ino
+ */
+int Zigbee_Get_Floor(GarageType type)
+{
+    uint8_t id = _garage_get_id(type);
+    
+    // 构造查询指令
+    uint8_t cmd[8] = { 0x55, id, 0x02, 0x01, 0x00, 0x00, 0x00, 0xBB };
+    cmd[6] = (uint8_t)((cmd[2] + cmd[3] + cmd[4] + cmd[5]) & 0xFF);
+
+    // 清空缓存
+    uint8_t dummy[8];
+    while (zigbee_recv(dummy));
+
+    zigbee_send(cmd, 2, 100);
+
     unsigned long start = millis();
-    uint8_t feedback[ZIGBEE_FRAME_LEN];
-    while (millis() - start < wait_time) {
-        if (zigbee_recv(feedback)) {
-            if ((feedback[0] == 0x55) && ((feedback[1] == 0x0D) || (feedback[1] == 0x05))) {
-                 if((feedback[2] == 0x03) && (feedback[3] == 0x01)) {
-                    return feedback[4];
-                 }
+    while (millis() - start < 500)
+    {
+        uint8_t fb[8];
+        if (zigbee_recv(fb))
+        {
+            if (fb[0] == 0x55 && fb[1] == id && fb[2] == 0x03 && fb[7] == 0xBB)
+            {
+                if (fb[4] >= 1 && fb[4] <= 4) return fb[4];
+                if (fb[3] >= 1 && fb[3] <= 4) return fb[3];
             }
         }
     }
-    return 0;
+    return -1;
+}
+
+void Zigbee_Garage_Ctrl(GarageType type, int target_floor, bool is_wait = true, unsigned long timeout_ms = 20000)
+{
+    // 参数安全检查
+    if (target_floor < 1 || target_floor > 4) return;
+
+    // 1. 检查当前层
+    int current_floor = Zigbee_Get_Floor(type);
+    if (current_floor == target_floor) {
+        return;
+    }
+
+    uint8_t id = _garage_get_id(type);
+
+    // 2. 发送移动指令 (转为 uint8_t 发送)
+    uint8_t cmd[8] = { 0x55, id, 0x01, (uint8_t)target_floor, 0x00, 0x00, 0x00, 0xBB };
+    cmd[6] = (uint8_t)((cmd[2] + cmd[3] + cmd[4] + cmd[5]) & 0xFF);
+    
+    uint8_t dummy[8];
+    while (zigbee_recv(dummy));
+    
+    zigbee_send(cmd, 3, 200);
+
+    if (!is_wait) return;
+
+    // 3. 阻塞等待
+    unsigned long start_time = millis();
+    unsigned long last_poll_time = 0;
+    delay(1000); 
+
+    while (millis() - start_time < timeout_ms)
+    {
+        if (millis() - last_poll_time > 1000)
+        {
+            last_poll_time = millis();
+            int reported = Zigbee_Get_Floor(type);
+            if (reported == target_floor) {
+                break;
+            }
+        }
+    }
 }
 
 void Zigbee_Gate_SetState(bool state) {

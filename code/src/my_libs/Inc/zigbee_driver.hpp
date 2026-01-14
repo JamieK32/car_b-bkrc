@@ -76,8 +76,7 @@ typedef struct {
 void Zigbee_Traffic_Open(TrafficID id);
 void Zigbee_Traffic_SetColor(TrafficID id, TrafficColor color);
 
-void Zigbee_Garage_Ctrl(GarageType garage_type, int floor, bool is_wait = false, uint16_t wait_time = 8000);
-uint8_t Zigbee_Garage_Get(GarageType type, uint16_t wait_time = 8000);
+void Zigbee_Garage_Ctrl(GarageType type, int target_floor, bool is_wait = true, unsigned long timeout_ms = 20000);
 
 void Zigbee_Gate_SetState(bool state);
 void Zigbee_Gate_Display_LicensePlate(const char* licence_str);

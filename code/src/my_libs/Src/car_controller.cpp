@@ -30,7 +30,7 @@
 /* ================== 循迹常量 ================== */
 static const uint16_t MILEAGE_EXIT = 1800;		   // 退出里程阈值
 static const uint16_t MILEAGE_MIN = 600;		   // 最小里程要求
-static const float OFFSET_MULTIPLIER = 34.0f;	   // 偏移量倍数
+static const float OFFSET_MULTIPLIER = 43.0f;	   // 偏移量倍数
 static const uint16_t FINAL_DISTANCE = 750;	       // 最终前进距离
 
 /* ================== 陀螺仪直行常量 ================== */
@@ -42,7 +42,7 @@ static euler_angles_t euler_angle;
 
 /* ================== 陀螺仪转向常量 ================== */
 const float KP_TURN     = 5.0f;
-const int16_t MIN_TURN  = 60;
+const int16_t MIN_TURN  = 40;
 const int16_t MAX_TURN  = 90;
 const float STOP_TH     = 2.0f;
 const uint8_t STABLE_N  = 8;
@@ -243,10 +243,13 @@ void Car_BackIntoGarage_Cam(void) {
     DCMotor.Car_Back(40, 1550);
 }
 
-void Car_BackIntoGarage_Gyro(int speed, int distance, float angle)
+void Car_BackIntoGarage_Gyro(float angle)
 {
     Car_Turn_Gryo(angle);
-    Car_MoveBackward_Gyro(speed, distance, angle);
+    Car_TrackForward(40, 700);
+    DCMotor.Car_Back(40, 700);
+    Car_TrackForward(40, 500);
+    DCMotor.Car_Back(40, 1550);
 }
 
 

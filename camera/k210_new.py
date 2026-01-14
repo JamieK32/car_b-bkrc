@@ -123,7 +123,7 @@ def init_rgb_sensor():
     time.sleep_ms(50)
 
 # ===================== 循迹（不显示） =====================
-LINE_THRESHOLD = (0, 72)
+LINE_THRESHOLD = (0, 70)
 LINE_ROI_Y, LINE_ROI_H = 170, 70
 LINE_ROI_W_RATIO = 0.75
 
