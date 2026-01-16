@@ -105,6 +105,8 @@ ProtocolData_t data;
     Car_TrackToCross(speed_val);
     
     Car_BackIntoGarage_Gyro(0); //倒车入库
+    WaitData(&data, 50000);
+
 }
 
 

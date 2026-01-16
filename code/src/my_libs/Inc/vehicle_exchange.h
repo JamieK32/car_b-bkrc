@@ -7,11 +7,11 @@
 #include "zigbee_frame_io.h"
 
 typedef enum {
-    CMD_START1 = 0x12,
-    CMD_START2,
-    CMD_START3,
-    CMD_START4,
-} ControlCmd;
+    ACK1 = 0x44,
+    ACK2,
+    ACK3,
+    ACK4,
+} AckEnum;
 
 typedef enum
 {
@@ -116,16 +116,19 @@ typedef struct
     uint8_t rfid[16];                // 读卡数据
 } ProtocolData_t;
 
-
 /* ===================== CMD ===================== */
-void Send_Start_Cmd(void);
-bool Wait_Start_Cmd(uint32_t timeout_ms);
 
-/* ===================== DATA ===================== */
+
+void Send_Ack(void);
+bool Wait_Ack(uint32_t timeout_ms);
+
 /* ✅ SendData：只发送非0字段；发送后自动清零（避免重复发） */
 bool SendData(ProtocolData_t *inout);
 
 /* ✅ WaitData：接收期间不断填充 out；若收到至少1帧数据则返回 true */
 bool WaitData(ProtocolData_t *out, uint32_t timeout_ms);
+
+bool SendDataAck(ProtocolData_t *inout, uint32_t timeout_ms);
+bool WaitDataAck(ProtocolData_t *out, uint32_t timeout_ms);
 
 #endif /* VEHICLE_EXCHANGE_H__ */

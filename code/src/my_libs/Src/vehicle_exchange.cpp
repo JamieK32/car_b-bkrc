@@ -44,12 +44,12 @@ static void send_frame_repeat(uint8_t type, uint8_t b0, uint8_t b1, uint8_t b2)
 
 /* ===================== CMD ===================== */
 
-void Send_Start_Cmd(void)
+void Send_Ack(void)
 {
-    send_frame_repeat(CMD_START1, CMD_START2, CMD_START3, CMD_START4);
+    send_frame_repeat(ACK1, ACK2, ACK3, ACK4);
 }
 
-bool Wait_Start_Cmd(uint32_t timeout_ms)
+bool Wait_Ack(uint32_t timeout_ms)
 {
     uint8_t buf[8];
     uint32_t start = get_ms();
@@ -59,7 +59,7 @@ bool Wait_Start_Cmd(uint32_t timeout_ms)
         if (ZigbeeRead8(buf)) {
             if (!frame_valid(buf)) continue;
 
-            if (buf[2] == CMD_START1 && buf[3] == CMD_START2 && buf[4] == CMD_START3 && buf[5] == CMD_START4) {
+            if (buf[2] == ACK1 && buf[3] == ACK2 && buf[4] == ACK3 && buf[5] == ACK4) {
                 return true;
             }
         } else {
@@ -439,4 +439,41 @@ bool WaitData(ProtocolData_t *out, uint32_t timeout_ms)
             delay_ms(1);
         }
     }
+}
+
+bool SendDataAck(ProtocolData_t *inout, uint32_t timeout_ms) {
+    uint32_t start = get_ms();
+    while (!time_reached(start, timeout_ms)) {
+        Send_Ack();
+        if (Wait_Ack(200)) {
+            SendData(inout);
+            return true;
+        }
+        delay_ms(200  );
+    }
+    return false;
+}
+
+bool WaitDataAck(ProtocolData_t *out, uint32_t timeout_ms)
+{
+    uint8_t buf[8];
+    uint32_t start = get_ms();
+
+    // 1) 等到对方的握手ACK帧（当作握手请求）
+    while (!time_reached(start, timeout_ms)) {
+        if (ZigbeeRead8(buf)) {
+            if (!frame_valid(buf)) continue;
+
+            if (buf[2] == ACK1 && buf[3] == ACK2 && buf[4] == ACK3 && buf[5] == ACK4) {
+                // 2) 回握手ACK（表示同意/在线）
+                Send_Ack();
+
+                // 3) 开始收数据包（用剩余时间或给一个固定timeout）
+                return WaitData(out, timeout_ms);
+            }
+        } else {
+            delay_ms(1);
+        }
+    }
+    return false;
 }
