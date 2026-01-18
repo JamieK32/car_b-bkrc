@@ -73,6 +73,8 @@ typedef struct {
 
 
 /* ================== 函数声明 ================== */
+void zigbee_send(uint8_t *cmd, uint8_t retry_cnt = 3U, uint16_t interval_ms = 300U);
+
 void Zigbee_Traffic_Open(TrafficID id);
 void Zigbee_Traffic_SetColor(TrafficID id, TrafficColor color);
 

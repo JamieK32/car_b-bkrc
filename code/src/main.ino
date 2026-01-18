@@ -178,10 +178,7 @@ void on_key_c_click(void) {
 }
 
 void on_key_d_click(void) {
-    while (1) {
-        log_main("mp = %d", DCMotor.Roadway_mp_Get());
-        delay(500);
-    }                
+    Display3D_Data_WriteText("123456");    
 }
 
 void btn_callback(void *btn_ptr) {

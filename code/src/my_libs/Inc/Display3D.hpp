@@ -82,7 +82,7 @@ void Display3D_Info_ShowSign (Display3DSign sign);
 
 // 数据显示
 void Display3D_Data_WriteText(const char* text);
-void Display3D_Data_WriteGBK (const uint16_t* gbk, int count);
+void Display3D_Data_WriteGBK8 (uint8_t* gbk, int count);
 void Display3D_Data_WriteDist(uint16_t mm);
 
 void Display3D_Data_WritePlate(const char* plate6, uint8_t x, uint8_t y);
