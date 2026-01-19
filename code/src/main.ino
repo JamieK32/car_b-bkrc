@@ -52,133 +52,19 @@
 #endif
 
 void on_key_a_click(void) {
-ProtocolData_t data;
-    ProtocolData_t receive;
-    #define speed_val 82
-    int count=0;
-    LSM6DSV16X_RezeroYaw_Fresh(200); 
-    Zigbee_Garage_Ctrl(GARAGE_TYPE_B, 1);
-    // Wait_Start_Cmd(60000);
-    Car_MoveForward(speed_val, 1420);
-
-    data.traffic_light_abc[count++]=identifyTraffic_New(TRAFFIC_A);
-    Car_TrackToCross(speed_val);
-
-    // Segment: Node2 -> Node3
-    data.traffic_light_abc[count++]=identifyTraffic_New(TRAFFIC_B);
-    Car_TrackToCross(speed_val);
-
-    // Segment: Node3 -> Node4
-    Car_Turn_Gryo(-90);
-    Car_MoveForward_Gyro(85, 2340, -90); // 越野地形模式
-
-    data.traffic_light_abc[count++]=identifyTraffic_New(TRAFFIC_C);
-    
-    //Car_TrackToCross(speed_val);
-
-    // Segment: Node4 -> Node5
-    Car_Turn_Gryo(-180);
-
-    // Send_Start_Cmd();
-    // if(Wait_Start_Cmd(60000)){
-    //     WaitData(&receive,10000);
-    //     for(int i=0;i<3;++i){
-    //         data.beacon_code[i]=receive.beacon_code[i];
-    //     }
-    //     alarm_log1();
-    // }
-
-    // if(Wait_Start_Cmd(60000)){
-    //    SendData(&data);
-    //    alarm_log1();
-    // }
-
-    // Zigbee_Gate_Display_LicensePlate((const char *)receive.car_plate); // 显示车牌
-    Car_TrackToCross(speed_val);
-
-    // Segment: Node5 -> Node6
-    Car_Turn_Gryo(-90);
-
-    Car_Turn_Gryo(-135);
-
-    Car_Turn_Gryo(-180);
-    Car_TrackToCross(speed_val);
-    
-    Car_BackIntoGarage_Gyro(0); //倒车入库
-    WaitData(&data, 50000);
 
 }
 
-
-
 void on_key_b_click(void) {
-    int sl_gear = 0;
-    int n = 1;
-    uint8_t fht_key[6];
-    // 路径段: D1 -> D2
-    LSM6DSV16X_RezeroYaw_Fresh(200); // 陀螺仪归零
-    Car_MoveForward(speed_val, 1200); // 发车段特殊指令
-    Car_Turn_Gryo(-90); // 左转 90°
-    identifyTraffic_New(TRAFFIC_A);
-    // 路径段: D2 -> B2
-    Car_TrackToCross(speed_val);
-    Car_Turn_Gryo(0); // 左转 90°
-    Zigbee_Gate_SetState(true);
-    // 路径段: B2 -> B4
-    Car_TrackToCross(speed_val);
-     Zigbee_Gate_SetState(false);
-    Car_Turn_Gryo(-90); // 左转 90°
-    Car_Turn_Gryo(90); // 左转 90°
-    identifyTraffic_New(TRAFFIC_B);
-    // 路径段: B4 -> D4
-    Car_TrackToCross(speed_val);
-    Zigbee_Bus_SpeakRandom();
-    uint8_t data = BKRC_Voice.Voice_WaitFor() - 5;
-    Zigbee_TFT_Display_Hex(TFT_ID_B, 0, 0, data);
-    // 路径段: D4 -> F4
-    Car_TrackToCross(speed_val);
-    Car_Turn_Gryo(180); 
-    // 路径段: F4 -> F2
-    Car_TrackToCross(speed_val);
-    // 路径段: F2 -> F1
-    Car_BackIntoGarage_Gyro(0); //倒车入库
+ 
 }
 
 void on_key_c_click(void) {
-    ProtocolData_t data;
-    if (!identifyQrCode_New(3)) {
-        alarm_fail();
-        return;
-    }
-    qr_data_map();
-    uint8_t *qr_data1 = (uint8_t *)qr_get_typed_data(kQrType_Bracket_LT); 
-    uint8_t qr_data1_len = qr_get_typed_len(kQrType_Bracket_LT);
-    if (qr_data1 && qr_data1_len) {
-        log_main("%s", (const char *)qr_data1);
-        qr_data1 = (uint8_t *)algo_extract_bracket((const char*)qr_data1, '<');
-        uint8_t route_len = qr_data1_len - 6;
-        uint8_t route_str[12];
-        uint8_t route = 0;
-        for (int i = 0; i < route_len; i++) {
-            route_str[i] = qr_data1[2 + i];
-        }
-        route_str[route_len] = '\0';
-        if (strstr((const char *)route_str, "B4") != NULL) {
-            route = 1;
-        } else if (strstr((const char *)route_str, "D2") != NULL) {
-            route = 2;
-        }
-        log_main("%s, %d", (const char *)route_str, route);
-        data.random_route[0] = route;
-        if (!SendData(&data)) {
-            alarm_fail();
-        }
-        alarm_log2();
-    }
+  
 }
 
 void on_key_d_click(void) {
-    Display3D_Data_WriteText("123456");    
+  
 }
 
 void btn_callback(void *btn_ptr) {

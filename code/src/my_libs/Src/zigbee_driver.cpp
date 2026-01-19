@@ -577,7 +577,7 @@ void Zigbee_Wireless_Activate(uint8_t* keys)
     
     // 校验逻辑：仅累加 B2+B3+B4+B5 (完全还原可用代码逻辑)
     uint16_t sum = (uint16_t)cmd[2] + cmd[3] + cmd[4] + cmd[5];
-    cmd[6] = (uint8_t)(sum % 256);
+    cmd[6] = (uint8_t)(sum & 256);
     cmd[7] = 0xBB;          // 帧尾
 
     zigbee_send(cmd);
