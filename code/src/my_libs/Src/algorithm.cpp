@@ -346,7 +346,73 @@ int* digits_to_intv(const char *s) {
     return a;
 }
 
+void algo_get_A_B(const char *str, uint8_t str_size, uint16_t* A, uint16_t *B)
+{
+    int ret_a = 0;
+    int ret_b = 0;
 
+    for (uint8_t i = 0; i < str_size && str[i] != '\0'; i++)
+    {
+        if (str[i] == '(')
+        {
+            i++;
+            while (i < str_size && str[i] != ')' && str[i] != '\0')
+            {
+                if (isdigit((unsigned char)str[i]))
+                {
+                    ret_b = ret_b * 10 + (str[i] - '0');
+                }
+                i++;
+            }
+            continue;
+        }
+
+        if (isdigit((unsigned char)str[i]))
+        {
+            ret_a = ret_a * 10 + (str[i] - '0');
+        }
+    }
+
+    *A = (uint16_t)ret_a;
+    *B = (uint16_t)ret_b;
+}
+
+int ch_to_hex(char ch)
+{
+    if (ch >= '0' && ch <= '9') return ch - '0';
+    if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+    if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+    return -1;
+}
+
+int ch2_to_hex(char ch1, char ch2)
+{
+    int hex_h = ch_to_hex(ch1);
+    int hex_l = ch_to_hex(ch2);
+
+    if (hex_h < 0 || hex_l < 0) return -1;   // 非法字符
+
+    return (hex_h << 4) | hex_l;             // 0~255
+}
+
+int  algo_str_to_hex(const char *str, uint8_t str_size,
+                    uint8_t *out, uint8_t out_max)
+{
+    if (!str || !out) return -1;
+    if (str_size % 2 != 0) return -2;                 // 长度必须为偶数
+
+    uint8_t out_len = (uint8_t)(str_size / 2);
+    if (out_max < out_len) return -3;                 // 输出缓冲区不够
+
+    for (uint8_t i = 0; i < out_len; i++)
+    {
+        int v = ch2_to_hex(str[2 * i], str[2 * i + 1]);
+        if (v < 0) return -4;                         // 非法字符
+        out[i] = (uint8_t)v;
+    }
+
+    return out_len;                                   // 返回写入的字节数
+}
 
 #ifdef __cplusplus
 } // extern "C"

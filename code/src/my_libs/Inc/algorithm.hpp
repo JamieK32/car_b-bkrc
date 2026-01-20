@@ -24,6 +24,10 @@ int algo_calc_eval(const char *expr, double *out_value);
 char* algo_extract_bracket(const char* s, char open);
 char* algo_extract_bracket_n(const char* s, char open, size_t n);
 
+void algo_get_A_B(const char *str, uint8_t str_size, uint16_t* A, uint16_t *B);
+int algo_str_to_hex(const char *str, uint8_t str_size,
+                    uint8_t *out, uint8_t out_max);
+
 int* digits_to_intv(const char *s);
 
 int bind_expr(char *dst, size_t dst_sz,
