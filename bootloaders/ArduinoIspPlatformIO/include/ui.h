@@ -13,7 +13,7 @@
 typedef enum {
   UI_EVT_NONE = 0,
   UI_EVT_CONFIRM_A,
-  UI_EVT_CONFIRM_B
+  UI_EVT_CONFIRM_B,
 } ui_event_t;
 
 void ui_init(U8G2 &disp, uint8_t pin_key_prev, uint8_t pin_key_ok);

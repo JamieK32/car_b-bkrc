@@ -65,122 +65,15 @@
 
 #include "vehicle_exchange_v2.h"
 
-typedef enum {
-    ROLE_A = 0,
-    ROLE_B = 1,
-} TestRole;
 
-/* ===================== 小工具：统一日志格式 ===================== */
-static const char* role_str(TestRole r) { return (r == ROLE_A) ? "A" : "B"; }
-
-static void log_line(TestRole role, const char *fmt, ...)
-{
-    /* 统一： [123456ms][A] ... */
-    uint32_t ms = get_ms();
-    log_printf("[%lu ms][%s] ", (unsigned long)ms, role_str(role));
-
-    va_list ap;
-    va_start(ap, fmt);
-    /* 如果你的 log_printf 不支持 vprintf，这里就直接改成 log_printf(fmt, ...) 的方式 */
-    /* 但大多数 RTT printf 封装都是支持的。若不支持，告诉我我再给你无va_list版本。 */
-    /* 这里用一个最保险的办法：把内容先格式化到缓冲区 */
-    char buf[256];
-    vsnprintf(buf, sizeof(buf), fmt, ap);
-    va_end(ap);
-
-    log_printf("%s\r\n", buf);
-}
-
-/* ===================== 漂亮打印HEX：16字节一行 ===================== */
-static void dump_hex_block(TestRole role, const char *tag, const uint8_t *buf, uint8_t len)
-{
-    log_line(role, "%s (len=%u)", tag, (unsigned)len);
-
-    for (uint8_t i = 0; i < len; i += 16) {
-        char line[128];
-        int pos = 0;
-
-        /* 偏移 */
-        pos += snprintf(line + pos, sizeof(line) - pos, "    %02u: ", (unsigned)i);
-
-        /* 16字节 HEX */
-        uint8_t chunk = (uint8_t)((len - i) > 16 ? 16 : (len - i));
-        for (uint8_t j = 0; j < 16; j++) {
-            if (j < chunk) pos += snprintf(line + pos, sizeof(line) - pos, "%02X ", buf[i + j]);
-            else           pos += snprintf(line + pos, sizeof(line) - pos, "   ");
-        }
-
-        /* 可选：ASCII 视图（非可打印用点号） */
-        pos += snprintf(line + pos, sizeof(line) - pos, " |");
-        for (uint8_t j = 0; j < chunk; j++) {
-            uint8_t c = buf[i + j];
-            line[pos++] = (c >= 32 && c <= 126) ? (char)c : '.';
-        }
-        line[pos++] = '|';
-        line[pos] = '\0';
-
-        log_line(role, "%s", line);
-    }
-}
-
-/* ===================== 单次互测（参数控制A/B） ===================== */
-void log_main_single_test_once(TestRole role)
-{
-    if (role == ROLE_A) {
-        /* A端：发 RFID -> 等 CMD */
-        uint8_t rfid[16];
-        for (uint8_t i = 0; i < 16; i++) rfid[i] = (uint8_t)(0xA0 + i);
-
-        log_line(role, "TX -> ITEM_RFID (16 bytes) ...");
-        bool ok = Zigbee_SendItemReliable(ITEM_RFID, rfid, 16, 0);
-        log_line(role, "TX -> ITEM_RFID : %s", ok ? "OK" : "FAIL");
-
-        uint8_t item_id = 0;
-        uint8_t cmd_buf[1] = {0};
-        uint8_t len = 1;
-
-        log_line(role, "RX <- ITEM_CMD (1 byte) ...");
-        ok = Zigbee_WaitItemReliable(&item_id, cmd_buf, &len, 0);
-        if (ok) {
-            log_line(role, "RX <- item_id=0x%02X OK", item_id);
-            dump_hex_block(role, "CMD", cmd_buf, len);
-        } else {
-            log_line(role, "RX <- ITEM_CMD : FAIL");
-        }
-
-    } else {
-        /* B端：等 RFID -> 回 CMD */
-        uint8_t item_id = 0;
-        uint8_t rfid[16] = {0};
-        uint8_t len = 16;
-
-        log_line(role, "RX <- ITEM_RFID (16 bytes) ...");
-        bool ok = Zigbee_WaitItemReliable(&item_id, rfid, &len, 0);
-        if (ok) {
-            log_line(role, "RX <- item_id=0x%02X OK", item_id);
-            dump_hex_block(role, "RFID", rfid, len);
-        } else {
-            log_line(role, "RX <- ITEM_RFID : FAIL");
-        }
-
-        /* 测试更稳：给A端一点时间从“发”切到“收”（避免双向抢空口） */
-        delay_ms(150);
-
-        uint8_t cmd = 0x5A;
-        log_line(role, "TX -> ITEM_CMD (1 byte) ...");
-        ok = Zigbee_SendItemReliable(ITEM_CMD, &cmd, 1, 0);
-        log_line(role, "TX -> ITEM_CMD : %s", ok ? "OK" : "FAIL");
-    }
-
-    log_line(role, "----------------------------------------");
-}
 
 void on_key_a_click(void) {
-    log_main_single_test_once(ROLE_B);
+    Car_TrackToCrossTrackingBoard(80);
+    Car_PassSpecialTerrain();
 }
 
 void on_key_b_click(void) {
-    log_main_single_test_once(ROLE_A);
+    Car_BackIntoGarage_TrackingBoard();
 }
 
 void on_key_c_click(void) {

@@ -23,15 +23,17 @@
 #include "log.hpp"
 #include "lsm6dsv16x.h"
 
+#define log_car(fmt, ...)  LOG_P("[CAR] " fmt "\r\n", ##__VA_ARGS__)
+
 /* ================== 转向宏定义 ================== */
-#define BASE_TURN_SPEED   100
-#define TURN_90_DEG       950
+#define BASE_TURN_SPEED   90
+#define TURN_90_DEG       685
 
 /* ================== 循迹常量 ================== */
 static const uint16_t MILEAGE_EXIT = 1800;		   // 退出里程阈值
 static const uint16_t MILEAGE_MIN = 600;		   // 最小里程要求
-static const float OFFSET_MULTIPLIER = 43.0f;	   // 偏移量倍数
-static const uint16_t FINAL_DISTANCE = 750;	       // 最终前进距离
+static const float OFFSET_MULTIPLIER = 35.0f;	   // 偏移量倍数
+static const uint16_t FINAL_DISTANCE = 355;	       // 最终前进距离
 
 /* ================== 陀螺仪直行常量 ================== */
 static const uint16_t GYRO_KP = 15;
@@ -67,6 +69,8 @@ static inline float calculate_angle_error(float target, float current);
 static inline float wrap180(float a);
 static inline float clampf(float v, float lo, float hi);
 static inline float absf(float x);
+static inline float getLookupOffset15(uint16_t lineMask);
+static inline bool isAtHighSpeedCrossroad16(uint16_t lineMask);
 
 /**
  * @brief 小车前进
@@ -131,6 +135,77 @@ void Car_TrackToCross(uint8_t speed)
     /* === 路口后前进固定距离 === */
     DCMotor.Car_Go(speed, FINAL_DISTANCE);
 }
+
+#define TRACK_ADDR 0x6000
+
+uint16_t readTracking15(void) {
+
+    uint8_t low8  = (uint8_t)ExtSRAMInterface.ExMem_Read(0x6000); // 后8位
+    uint8_t high8 = (uint8_t)ExtSRAMInterface.ExMem_Read(0x6001); // 前7位在低7位
+
+    uint16_t high7 = (uint16_t)(high8 & 0x7F);   // 只取前7位
+    
+    char s[16];
+    uint8_t l_idx = 0;
+    uint8_t h_idx = 0;
+
+    for (int i = 0; i < 15; i++) {
+        if (i % 2 == 0) s[i] = (low8 & (1u << l_idx++)) ? '1' : '0'; 
+        else s[i] = (high7 & (1u << h_idx++)) ? '1' : '0'; 
+    }
+    s[15] = '\0';
+    int n = strlen(s);
+    for (int i = 0, j = n - 1; i < j; i++, j--) {
+        char c = s[i];
+        s[i] = s[j];
+        s[j] = c;
+    }
+
+    return (uint16_t)strtol(s, NULL, 2);
+}
+
+#define OFFSET_STOP_TH      2.0f    // 偏移阈值（平均值法，单位是“探头索引”）
+
+void Car_TrackToCrossTrackingBoard(uint8_t speed)
+{
+    DCMotor.Roadway_mp_sync();
+
+    while (true)
+    {
+        uint16_t lineMask = readTracking15();     // 0..0x7FFF
+
+        uint16_t mileage  = DCMotor.Roadway_mp_Get();
+
+        if ( (mileage >= MILEAGE_MIN && isAtHighSpeedCrossroad16(lineMask)) ||
+             (mileage >= MILEAGE_EXIT) )
+        {
+            break;
+        }
+
+        float offset = getLookupOffset15(lineMask);
+
+        if (fabsf(offset) > OFFSET_STOP_TH)
+        {
+            // === 偏移过大：原地转向 ===
+            float speed_turn = offset * 35.0f;
+
+            // 限幅（非常重要）
+            speed_turn = clampf(speed_turn, -MAX_TURN, MAX_TURN);
+
+            DCMotor.SpeedCtr(-speed_turn, speed_turn);
+        }
+        else
+        {
+            float corr = offset * 20.0f;
+            DCMotor.SpeedCtr(speed - corr, speed + corr);
+        }
+
+    }
+
+    DCMotor.Stop();
+    DCMotor.Car_Go(speed, FINAL_DISTANCE);
+}
+
 
 void Car_Turn_Gryo(float angle)   // angle: 绝对目标 yaw, [-180,180]
 {
@@ -236,12 +311,40 @@ void Car_TrackForward(uint8_t speed, uint16_t distance)
     DCMotor.Stop();
 }
 
+void Car_TrackForwardTrackingBoard(uint8_t speed, uint16_t distance)
+{
+    DCMotor.Roadway_mp_sync();
+
+    while (DCMotor.Roadway_mp_Get() < distance)
+    {
+        uint16_t lineMask = readTracking15();   // 0..0x7FFF (15位)
+        float offset = getLookupOffset15(lineMask);
+
+        // 偏移过大：原地转向纠偏
+        if (fabsf(offset) > OFFSET_STOP_TH - 1.0)
+        {
+            float speed_turn = offset * 35.0f;
+            speed_turn = clampf(speed_turn, -MAX_TURN, MAX_TURN);
+            DCMotor.SpeedCtr(-speed_turn, speed_turn);
+        }
+        else
+        {
+            // 正常循迹：速度差
+            float corr = offset * 35.0f;
+            DCMotor.SpeedCtr(speed - corr, speed + corr);
+        }
+    }
+
+    DCMotor.Stop();
+}
+
 void Car_BackIntoGarage_Cam(void) {
     Car_TrackForward(40, 700);
     DCMotor.Car_Back(40, 700);
     Car_TrackForward(40, 500);
     DCMotor.Car_Back(40, 1550);
 }
+
 
 void Car_BackIntoGarage_Gyro(float angle)
 {
@@ -252,6 +355,10 @@ void Car_BackIntoGarage_Gyro(float angle)
     DCMotor.Car_Back(40, 1550);
 }
 
+void Car_BackIntoGarage_TrackingBoard(void) {
+    Car_TrackForwardTrackingBoard(75, 700);
+    DCMotor.Car_Back(75, 1450);
+}
 
 
 void Car_MoveToTarget(float targetDistance) {
@@ -303,6 +410,11 @@ void Car_MoveToTarget(float targetDistance) {
     }
 }
 
+void Car_PassSpecialTerrain(void) {
+    Car_MoveBackward(80, 300);
+    Car_TrackForwardTrackingBoard(80, 400);
+    Car_MoveForward(80, 1750);
+}
 /* ================== 底层功能（解耦） ================== */
 /**
  * @brief 打开转向灯
@@ -355,6 +467,33 @@ static inline float getLookupOffset(uint8_t lineMask)
     return 0.0f;  // 未命中返回0
 }
 
+static inline float getLookupOffset15(uint16_t lineMask)
+{
+    // 0=触发 → 翻转成 1=有效（只处理 15 位）
+    uint16_t active = (~lineMask) & 0x7FFF;  // ✅ 关键
+
+    int sum = 0;
+    int cnt = 0;
+
+    for (int i = 0; i < 15; i++)
+    {
+        if (active & (1u << i))
+        {
+            sum += i;
+            cnt++;
+        }
+    }
+
+    // 全1（0x7FFF）=> active=0 => cnt=0 => 返回0 ✅
+    if (cnt == 0)
+        return 0.0f;
+
+    float centroid = (float)sum / (float)cnt; // 0..14
+    return centroid - 7.0f;                   // ✅ 15路中心是 7
+}
+
+
+
 static inline uint8_t popcount8(uint8_t x)
 {
     uint8_t c = 0;
@@ -372,6 +511,22 @@ static inline bool isAtHighSpeedCrossroad(uint8_t lineMask)
 {
     return popcount8(lineMask) >= 6;
 }
+
+static inline bool isAtHighSpeedCrossroad16(uint16_t lineMask)
+{
+    // 0 = 触发 → 翻转成 1 = 有效（只取15位）
+    uint16_t active = (~lineMask) & 0x7FFF;
+
+    // 左区：bit12~14
+    bool left  = active & 0b111000000000000;   // bits 12,13,14
+
+    // 右区：bit0~2
+    bool right = active & 0b000000000000111;   // bits 0,1,2
+
+    // 左右同时有触发 → 十字路口
+    return left && right;
+}
+
 
 static inline float calculate_angle_error(float target, float current) {
     float error = target - current;

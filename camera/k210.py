@@ -2,6 +2,7 @@
 from Maix import GPIO
 from machine import UART, Timer, PWM
 from fpioa_manager import fm
+import lcd
 
 # =============================================================================
 # 0) Unified Debug Logger (简洁统一版)
@@ -14,7 +15,7 @@ LOG_TAG = {
     "TRAFFIC": False,
     "SERVO":   False,
     "SENSOR":  False,
-    "LINE":    False,
+    "LINE":    True,
     "QR":      False,
     "UART":    False,
     "MODE":    False,
@@ -249,38 +250,62 @@ class TrafficLightDetector:
         return result
 
 # =============================================================================
-# 8) Line Tracker
+# 8) Line Tracker (固定标注在指定 ROI 区域)
 # =============================================================================
 class LineTracker:
-    # 统一灰度阈值：0~72 认为是线(深色)
-    LINE_THRESHOLD = (0, 100)
+    LINE_THRESHOLD = (0, 66)
 
-    def __init__(self, uart_comm, debug=False, roi_y=170, roi_h=70, roi_width_ratio=0.75):
+    # 你截图给的区域：ROI (x:0, y:26, w:75, h:188)
+    BASE_ROI = (0, 26, 75, 188)
+
+    # True：在 BASE_ROI 内沿“高度”切 8 段（适合竖屏/等效旋转90°的循迹）
+    # False：在 BASE_ROI 内沿“宽度”切 8 段（传统横向8段）
+    SPLIT_ALONG_HEIGHT = True
+
+    def __init__(self, uart_comm, debug=False):
         self.uart_comm = uart_comm
         self.debug = debug
-        self.roi_y = roi_y
-        self.roi_h = roi_h
-        self.roi_width_ratio = roi_width_ratio
 
-    def _rois(self, w):
-        total_w = int(w * self.roi_width_ratio)   # 保留缩放：总ROI宽度占比
-        roi_w = total_w // 8
-        start_x = (w - total_w) // 2
-        return [(start_x + i * roi_w, self.roi_y, roi_w, self.roi_h) for i in range(8)]
+    def _sub_rois(self, img_w, img_h):
+        x, y, w, h = self.BASE_ROI
+
+        # 防越界裁剪（避免你换分辨率时炸）
+        x = max(0, min(img_w - 1, x))
+        y = max(0, min(img_h - 1, y))
+        w = max(1, min(img_w - x, w))
+        h = max(1, min(img_h - y, h))
+
+        rois = []
+        if self.SPLIT_ALONG_HEIGHT:
+            # 在大ROI里“竖向切8段”（沿高度分8块）
+            roi_h = max(1, h // 8)
+            for i in range(8):
+                ry = y + i * roi_h
+                rh = roi_h if i < 7 else (y + h - ry)  # 最后一块吃掉余数
+                rois.append((x, ry, w, rh))
+        else:
+            # 在大ROI里“横向切8段”（沿宽度分8块）
+            roi_w = max(1, w // 8)
+            for i in range(8):
+                rx = x + i * roi_w
+                rw = roi_w if i < 7 else (x + w - rx)
+                rois.append((rx, y, rw, h))
+
+        return rois
 
     def _draw_rois(self, img, rois, mask):
         for i, r in enumerate(rois):
             active = (mask >> (7 - i)) & 1
             img.draw_rectangle(r, color=(255 if active else 127), thickness=(2 if active else 1))
-            img.draw_string(r[0] + 3, r[1] + 5, str(i), scale=1.5, color=255)
+            img.draw_string(r[0] + 2, r[1] + 2, str(i), scale=1.5, color=255)
 
     def step(self):
         img = sensor.snapshot()
-        rois = self._rois(img.width())
+
+        rois = self._sub_rois(img.width(), img.height())
 
         mask = 0
         for i, roi in enumerate(rois):
-            # GRAYSCALE 下 find_blobs 需要 thresholds 是 list：[(min,max)]
             if img.find_blobs([self.LINE_THRESHOLD], roi=roi, pixels_threshold=50):
                 mask |= 1 << (7 - i)
 
@@ -290,6 +315,7 @@ class LineTracker:
 
         if self.debug:
             log("LINE", "Bitmask: 0x{:02X}".format(mask))
+
 
 
 # =============================================================================

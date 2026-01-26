@@ -11,7 +11,7 @@
 #include "ui.h"
 
 // ---------------- OLED ----------------
-U8G2_SSD1306_128X64_NONAME_1_HW_I2C  u8g2(U8G2_R0, A5, A4, U8X8_PIN_NONE);
+U8G2_SSD1306_128X64_NONAME_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 // ---------------- 状态机 ----------------
 enum AppState : uint8_t {
@@ -24,14 +24,9 @@ static AppState g_state = ST_UI;
 static bool     g_last_burn_ok = false;
 static uint8_t  g_last_choice  = 0;
 
-// 结果页闪灯（非阻塞）
-static uint32_t g_blink_t = 0;
-static bool g_led = false;
-
 // ---------------- ISP烧录流程（阻塞） ----------------
 static bool do_burn(uint8_t idx) {
   ui_draw_status("ABrobot", "PMODE", "...");
-  LOGLN("\r\n[OFFLINE ISP] Enter program mode...");
   isp_start_pmode();
 
   uint8_t sig[3] = {0};
@@ -77,30 +72,19 @@ static void enter_state(AppState s) {
       ui_draw_status("FAIL", "CHECK", "D3 BACK");
       digitalWrite(LED_ERR, HIGH);
     }
-    g_blink_t = millis();
-    g_led = false;
-    digitalWrite(13, LOW);
   }
 }
 
 void setup() {
-  SERIAL.begin(BAUDRATE);
-
-#if defined(USBCON) || defined(ARDUINO_ARCH_SAMD) || defined(ARDUINO_ARCH_MBED)
-  unsigned long t0 = millis();
-  while (!SERIAL && (millis() - t0 < 1500)) { ; }
-#endif
-
+  
   pinMode(LED_PMODE, OUTPUT);
   pinMode(LED_ERR, OUTPUT);
   pinMode(LED_HB, OUTPUT);
-  pinMode(13, OUTPUT);
 
   digitalWrite(LED_PMODE, LOW);
   digitalWrite(LED_ERR, LOW);
   digitalWrite(LED_HB, LOW);
-  digitalWrite(13, LOW);
-
+  
   // OLED
   u8g2.begin();
   u8g2.setContrast(255);
@@ -112,7 +96,7 @@ void setup() {
   ui_set_viewport_offset(30, 12);
 
   // 短字
-  ui_set_firmware_labels("original", "recovery");
+  ui_set_firmware_labels("recovery", "original");
 
   enter_state(ST_UI);
 }
@@ -140,15 +124,7 @@ void loop() {
     } break;
 
     case ST_RESULT: {
-      // 闪灯
-      uint16_t period = g_last_burn_ok ? 450 : 160;
-      if (millis() - g_blink_t >= period) {
-        g_blink_t = millis();
-        g_led = !g_led;
-        digitalWrite(13, g_led ? HIGH : LOW);
-      }
-
-      // 返回 UI：只要按一次 D4（OK click 会产生 confirm 事件）
+      // 返回 UI：只要按一次 D3（OK click 会产生 confirm 事件）
       ui_tick();
       ui_event_t e = ui_pop_event();
       if (e != UI_EVT_NONE) {

@@ -143,7 +143,7 @@
 
 
 /* ================= 编译开关：启用 2 ================= */
-#define K210_USE_SERIAL
+// #define K210_USE_SERIAL
 
 #ifdef K210_USE_SERIAL
   #define K210_PORT                 Serial1

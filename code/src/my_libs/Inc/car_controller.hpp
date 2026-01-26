@@ -9,10 +9,13 @@ void Car_MoveForward(uint8_t speed, uint16_t distance);
 void Car_MoveBackward(uint8_t speed, uint16_t distance);
 void Car_MoveForward_Gyro(uint16_t speed, uint16_t distance, float target_yaw);
 void Car_TrackToCross(uint8_t speed);
+void Car_TrackToCrossTrackingBoard(uint8_t speed);
 void Car_BackIntoGarage_Gyro(float angle);
 void Car_BackIntoGarage_Cam(void);
 void Car_MoveToTarget(float targetDistance);
-
+void Car_TrackForwardTrackingBoard(uint8_t speed, uint16_t distance);
+void Car_PassSpecialTerrain(void);
+void Car_BackIntoGarage_TrackingBoard(void);
 /* ================== 类型定义 ================== */
 typedef enum
 {
@@ -99,5 +102,6 @@ static const lookup_table_t lookup_table[] = {
 	{0xBF, 3.0},
 	{0xFB, 3.0},
 };
+
 
 #endif

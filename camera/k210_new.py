@@ -125,10 +125,11 @@ def init_rgb_sensor():
 # ===================== 循迹（不显示） =====================
 LINE_THRESHOLD = (0, 70)
 LINE_ROI_Y, LINE_ROI_H = 170, 70
-LINE_ROI_W_RATIO = 0.75
+LINE_ROI_W_RATIO = 0.83
 
 def line_step(uart):
     img = sensor.snapshot()
+    img = img.rotation_corr(z_rotation=90)
     w = img.width()
 
     total_w = int(w * LINE_ROI_W_RATIO)

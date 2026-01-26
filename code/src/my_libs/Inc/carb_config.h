@@ -2,7 +2,7 @@
 #define CARB_CONFIG_H__
 
 
-#define USE_GYRO
+// #define USE_GYRO
 
 
 #endif 

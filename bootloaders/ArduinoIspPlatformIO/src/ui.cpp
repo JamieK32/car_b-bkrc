@@ -40,6 +40,15 @@ static void on_prev_click() {
   g_selected ^= 1;
 }
 
+static void on_prev_long_press() {
+  static uint32_t last_time = 0;
+  uint32_t current_time = millis();
+  if (current_time - last_time >= 200) {
+    g_selected ^= 1;
+    last_time = current_time;
+  }
+}
+
 static void on_ok_click() {
   g_evt = (g_selected == 0) ? UI_EVT_CONFIRM_A : UI_EVT_CONFIRM_B;
 }
@@ -63,7 +72,7 @@ void ui_init(U8G2 &disp, uint8_t pin_key_prev, uint8_t pin_key_ok) {
   // 只要短按：click
   btnPrev->attachClick(on_prev_click);
   btnOk->attachClick(on_ok_click);
-
+  btnPrev->attachDuringLongPress(on_prev_long_press);
   g_selected = 0;
   g_evt = UI_EVT_NONE;
 }
