@@ -34,6 +34,7 @@
 #include "qrcode_datamap.hpp"
 #include "ultrasonic.hpp"
 #include "vehicle_exchange_v2.h"
+#include "path_executor.h"
 
 // 各种演示
 #include "qrcode_demos.hpp"
@@ -53,31 +54,44 @@
   #define alarm_log2()   do {} while(0)
 #endif
 
-/* ===================== 角色选择：两端分别改成 0/1 ===================== */
-#ifndef IS_SIDE_A
-#define IS_SIDE_A 0   // A端=1, B端=0
-#endif
-
-#include <stdint.h>
-#include <stdbool.h>
-#include <string.h>
-#include <stdarg.h>
-
-#include "vehicle_exchange_v2.h"
-
-
-
 void on_key_a_click(void) {
-    Car_TrackToCrossTrackingBoard(80);
-    Car_PassSpecialTerrain();
+  
+}
+
+void gate_on(void) {
+    Zigbee_Gate_SetState(true);
+}
+
+void trafficb(void) {
+    identifyTraffic_New(TRAFFIC_B);
 }
 
 void on_key_b_click(void) {
-    Car_BackIntoGarage_TrackingBoard();
+    plan_cfg_t cfg = { .default_speed = 75 };
+
+    path_avoid_seg_t avoids[2] = { {"D4", "D2"}, {"D4", "D6"}};
+    path_mark_seg_t marksp[2] = { {"D2", "F2", gate_on, PATH_MARK_CALL_TRACK_ONLY},
+                                  {"F2", "F4", trafficb, PATH_MARK_CALL_TURN_ONLY}};
+
+    action_t acts[MAX_ACTIONS];
+    char path_buf[128];
+
+    int n = Path_PlanAndBuildActions("B2", "F6",
+                                    avoids, 2,
+                                    marksp, 2,
+                                    &cfg,
+                                    acts, MAX_ACTIONS,
+                                    path_buf, sizeof(path_buf));
+                                
+    log_main("path_buf = '%s'", path_buf);
+    
+    Path_ExecuteActions(acts, n);
+
+    Car_BackIntoGarage_TrackingBoard(3);
 }
 
 void on_key_c_click(void) {
-  
+    identifyTraffic_New(TRAFFIC_A);
 }
 
 void on_key_d_click(void) {

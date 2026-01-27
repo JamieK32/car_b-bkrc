@@ -7,7 +7,7 @@
 #define QRCODE_SLOT_SIZE 64
 
 /* ================= 舵机角度宏定义 ================= */
-#define SERVO_TRAFFIC_IDENTIFY_ANGLE   16     // 交通灯识别角度
+#define SERVO_TRAFFIC_IDENTIFY_ANGLE   5     // 交通灯识别角度
 #define SERVO_QRCODE_IDENTIFY_ANGLE    4
 #define SERVO_DEFAULT_ANGLE           (-45) // 舵机回正角度
 #define SERVO_SCAN_MIN                (-15)

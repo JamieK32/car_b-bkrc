@@ -1,21 +1,9 @@
-#ifndef CAR_CONTROLLER_H__
-#define CAR_CONTROLLER_H__
+// car_controller.hpp
+#ifndef CAR_CONTROLLER_HPP__
+#define CAR_CONTROLLER_HPP__
 
-#include "stdint.h"
+#include <stdint.h>
 
-void Car_Turn(int16_t angle);
-void Car_Turn_Gryo(float angle);
-void Car_MoveForward(uint8_t speed, uint16_t distance);
-void Car_MoveBackward(uint8_t speed, uint16_t distance);
-void Car_MoveForward_Gyro(uint16_t speed, uint16_t distance, float target_yaw);
-void Car_TrackToCross(uint8_t speed);
-void Car_TrackToCrossTrackingBoard(uint8_t speed);
-void Car_BackIntoGarage_Gyro(float angle);
-void Car_BackIntoGarage_Cam(void);
-void Car_MoveToTarget(float targetDistance);
-void Car_TrackForwardTrackingBoard(uint8_t speed, uint16_t distance);
-void Car_PassSpecialTerrain(void);
-void Car_BackIntoGarage_TrackingBoard(void);
 /* ================== 类型定义 ================== */
 typedef enum
 {
@@ -23,85 +11,33 @@ typedef enum
     TURN_RIGHT
 } TurnDirection;
 
+/* ================== 对外 API ================== */
+void Car_MoveForward(uint8_t speed, uint16_t distance);
+void Car_MoveBackward(uint8_t speed, uint16_t distance);
 
-// 循迹查找表结构体
-typedef struct
-{
-	uint8_t input; // 输入：线位置掩码
-	float output;  // 输出：偏移量
-} lookup_table_t;
+// angle_deg: +90 左转90度，-90 右转90度
+void Car_Turn(int16_t angle_deg);
 
-// 更平滑、边缘更小（建议左右对称）
-// 更平滑：按“单点偏移取平均”扩展到 5~8 点相邻
-static const lookup_table_t lookup_table[] = {
-	// 适用于黑色巡线
-	// 单个传感器触发
-	{0x01, -3.5}, // 00000001b (bit 0) - 最左端
-	{0x02, -2.5}, // 00000010b (bit 1)
-	{0x04, -1.5}, // 00000100b (bit 2)
-	{0x08, -0.5}, // 00001000b (bit 3)
-	{0x10, 0.0},  // 00010000b (bit 4) ⭐ 中心
-	{0x20, 0.5},  // 00100000b (bit 5)
-	{0x40, 1.5},  // 01000000b (bit 6)
-	{0x80, 2.5},  // 10000000b (bit 7) - 最右端
+/* K210 摄像头循迹 */
+void Car_TrackToCross(uint8_t speed);
+void Car_TrackForward(uint8_t speed, uint16_t distance);
 
-	// 两个相邻传感器触发（双线）
-	{0x03, -3.0}, // 00000011b (bit 0,1)
-	{0x06, -2.0}, // 00000110b (bit 1,2)
-	{0x0C, -1.0}, // 00001100b (bit 2,3)
-	{0x18, 0.0},  // 00011000b (bit 3,4) ⭐ 双线中心
-	{0x30, 1.0},  // 00110000b (bit 4,5)
-	{0x60, 2.0},  // 01100000b (bit 5,6)
-	{0xC0, 3.0},  // 11000000b (bit 6,7)
+/* 15路循迹板（SRAM） */
+void Car_TrackToCrossTrackingBoard(uint8_t speed);
+void Car_TrackForwardTrackingBoard(uint8_t speed, uint16_t distance, uint8_t kp = 1u);
 
-	// 三个相邻传感器检测（宽线条）
-	{0x07, -2.5}, // 00000111b (bit 0,1,2) - 最左端三个
-	{0x0E, -1.5}, // 00001110b (bit 1,2,3)
-	{0x1C, -0.3}, // 00011100b (bit 2,3,4) - 左偏中心
-	{0x38, 1.5},  // 00111000b (bit 3,4,5) - 右偏中心
-	{0x70, 1.5},  // 01110000b (bit 4,5,6)
-	{0xE0, 2.5},  // 11100000b (bit 5,6,7) - 最右端三个
-	{0x0F, -2.0}, // 00001111b
-	{0x1E, -1.5}, // 00011110b
-	{0x3C, 0.0},  // 00111100b → 完全居中
-	{0x78, 1.5},  // 01111000b
-	{0xF0, 2.0},  // 11110000b
+/* 陀螺仪 */
+void Car_Turn_Gryo(float target_yaw_deg); // angle: 绝对目标 yaw, [-180,180]
+void Car_MoveForward_Gyro(uint16_t speed, uint16_t distance, float target_yaw);
+void Car_MoveBackward_Gyro(uint16_t speed, uint16_t distance, float target_yaw);
 
-	// =====================================================
-	//   ★ 五相邻触发（极宽黑线、转弯、贴线压到中心）
-	// =====================================================
-	{0x1F, -1.5}, // 00011111b
-	{0x3E, -0.5}, // 00111110b
-	{0x7C, 0.0},  // 01111100b（中心）
-	{0xF8, 0.5},  // 11111000b
+/* 超声波闭环距离 */
+void Car_MoveToTarget(float targetDistance_cm);
 
-	// 适用于白色巡线（颜色翻转）
-	// 单个传感器触发
-	{0xFE, -3.5}, // 11111110
-	{0xFD, -2.5}, // 11111101
-	{0xFB, -1.5}, // 11111011
-	{0xF7, -0.5}, // 11110111
-	{0xEF, 0.0},  // 11101111 ⭐中心
-	{0xDF, 0.5},  // 11011111
-	{0xBF, 1.5},  // 10111111
-	{0x7F, 2.5},  // 01111111 - 最右端(反转后)
-
-	// 两个相邻传感器触发
-	{0xFC, -3.0}, // 11111100
-	{0xF9, -2.0}, // 11111001
-	{0xF3, -1.0}, // 11110011
-	{0xE7, 0.0},  // 11100111 ⭐ 双线中心
-	{0xCF, 1.0},  // 11001111
-	{0x9F, 2.0},  // 10011111
-	{0x3F, 3.0},  // 00111111
-
-	// 特殊模式
-	{0xDF, -3},
-	{0xFF, -3},
-	{0xEF, -3},
-	{0xBF, 3.0},
-	{0xFB, 3.0},
-};
-
+/* 复合动作 */
+void Car_BackIntoGarage_Cam(void);
+void Car_BackIntoGarage_Gyro(float angle);
+void Car_BackIntoGarage_TrackingBoard(int n);
+void Car_PassSpecialTerrain(void);
 
 #endif
