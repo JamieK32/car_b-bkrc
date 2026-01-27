@@ -63,14 +63,13 @@ void Car_BackIntoGarage_Gyro(float angle)
 
 void Car_BackIntoGarage_TrackingBoard(int n)
 {
-    Car_Turn(155);
     Car_MoveForward(80, 300);
     for (int i = 0; i < n; i++)
     {
-        Car_TrackForwardTrackingBoard(75, 300, (uint8_t)(i + 1));
-        DCMotor.Car_Back(75, 300);
+        Car_TrackForwardTrackingBoard(75, 480, (uint8_t)(i + 1));
+        DCMotor.Car_Back(75, 480);
     }
-    DCMotor.Car_Back(75, 940);
+    DCMotor.Car_Back(75, 1150);
 }
 
 void Car_PassSpecialTerrain(void)

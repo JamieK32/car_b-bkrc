@@ -33,6 +33,16 @@ static const float   KP        = 4.0f;
 static const float   KI        = 0.1f;
 static const float   INTEGRAL_LIMIT = 10.0f;
 
+/* ================== 超声波摆正（左右试探）常量 ================== */
+static const uint8_t  ULTRA_ALIGN_TURN_SPD   = 75;   // 原地试探转向速度（别太大）
+static const uint16_t ULTRA_PROBE_MS         = 130;   // 试探一次转动时长（越大角度越大）
+static const uint16_t ULTRA_SETTLE_MS        = 130;   // 停稳等待（很关键）
+static const uint8_t  ULTRA_SAMPLES          = 5;    // 中值滤波次数
+static const float    ULTRA_DEADBAND_CM      = 0.0f; // 左右距离差小于它就算摆正
+static const uint16_t ULTRA_MAX_ALIGN_MS     = 220;  // 单次修正最大转动时长
+static const uint32_t ULTRA_ALIGN_TIMEOUT_MS = 10000; // 总超时
+static const float    ULTRA_ALIGN_K_MS_PER_CM = 60.0f; // |dL-dR| -> 修正时长系数
+
 /* ================== 工具函数 ================== */
 static inline float clampf(float v, float lo, float hi)
 {
@@ -175,4 +185,80 @@ void Car_MoveToTarget(float targetDistance_cm)
 
         delay(30);
     }
+}
+
+static inline float Ultrasonic_ReadStable_cm()
+{
+    // 用中值更稳；如果你不想用 median，也可以换成 Ultrasonic_GetDistance()
+    unsigned int d = Ultrasonic_GetDistanceMedian(ULTRA_SAMPLES);
+    return (float)d;
+}
+
+/* ================== 对外：超声波摆正（左右试探） ================== */
+void Car_SquareByUltrasonicProbe()
+{
+    uint32_t start = millis();
+
+    while (millis() - start < ULTRA_ALIGN_TIMEOUT_MS)
+    {
+        // 先停稳再开始一次试探
+        DCMotor.SpeedCtr(0, 0);
+        delay(ULTRA_SETTLE_MS);
+
+        // ---- 左试探：左转一点 -> 测距 dL ----
+        DCMotor.SpeedCtr(-(int16_t)ULTRA_ALIGN_TURN_SPD, (int16_t)ULTRA_ALIGN_TURN_SPD);
+        delay(ULTRA_PROBE_MS);
+        DCMotor.SpeedCtr(0, 0);
+        delay(ULTRA_SETTLE_MS);
+        float dL = Ultrasonic_ReadStable_cm();
+
+        // ---- 右试探：从左侧位置直接右转 2 倍时间 -> 到右侧 -> 测距 dR ----
+        DCMotor.SpeedCtr((int16_t)ULTRA_ALIGN_TURN_SPD, -(int16_t)ULTRA_ALIGN_TURN_SPD);
+        delay(ULTRA_PROBE_MS * 2);
+        DCMotor.SpeedCtr(0, 0);
+        delay(ULTRA_SETTLE_MS);
+        float dR = Ultrasonic_ReadStable_cm();
+
+        // ---- 回到中心：左转 1 倍时间回中 ----
+        DCMotor.SpeedCtr(-(int16_t)ULTRA_ALIGN_TURN_SPD, (int16_t)ULTRA_ALIGN_TURN_SPD);
+        delay(ULTRA_PROBE_MS);
+        DCMotor.SpeedCtr(0, 0);
+        delay(ULTRA_SETTLE_MS);
+
+        // 计算左右差值：dL - dR
+        float err = dL - dR;
+
+        // 若左右差很小，认为已摆正
+        if (fabsf(err) <= ULTRA_DEADBAND_CM)
+        {
+            DCMotor.SpeedCtr(0, 0);
+            return;
+        }
+
+        // 根据误差决定往哪边“修正”
+        // 直觉：哪边距离更小，说明那边更对着墙（更正），就朝那边转一点
+        // err < 0 => dL < dR => 左边更近 => 往左修正
+        // err > 0 => dR < dL => 右边更近 => 往右修正
+        float ms_f = fabsf(err) * ULTRA_ALIGN_K_MS_PER_CM;
+        uint16_t fix_ms = (uint16_t)clampf(ms_f, 30.0f, (float)ULTRA_MAX_ALIGN_MS);
+
+        if (err < 0)
+        {
+            // 左修正
+            DCMotor.SpeedCtr(-(int16_t)ULTRA_ALIGN_TURN_SPD, (int16_t)ULTRA_ALIGN_TURN_SPD);
+            delay(fix_ms);
+        }
+        else
+        {
+            // 右修正
+            DCMotor.SpeedCtr((int16_t)ULTRA_ALIGN_TURN_SPD, -(int16_t)ULTRA_ALIGN_TURN_SPD);
+            delay(fix_ms);
+        }
+
+        DCMotor.SpeedCtr(0, 0);
+        delay(ULTRA_SETTLE_MS);
+    }
+
+    // 超时兜底
+    DCMotor.SpeedCtr(0, 0);
 }

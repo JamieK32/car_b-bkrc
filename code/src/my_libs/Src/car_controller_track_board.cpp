@@ -10,7 +10,7 @@
 
 /* ================== 参数 ================== */
 static const uint16_t MILEAGE_EXIT   = 1800;
-static const uint16_t MILEAGE_MIN    = 600;
+static const uint16_t MILEAGE_MIN    = 750;
 static const uint16_t FINAL_DISTANCE = 355;
 
 #define OFFSET_STOP_TH   2.0f    // 偏移阈值（单位：探头索引）
@@ -83,8 +83,8 @@ static inline bool isAtHighSpeedCrossroad16(uint16_t lineMask)
 {
     uint16_t active = (uint16_t)((~lineMask) & 0x7FFFu);
 
-    bool left  = (active & 0b111000000000000u) != 0; // bits 12,13,14
-    bool right = (active & 0b000000000000111u) != 0; // bits 0,1,2
+    bool left  = (active & 0b100000000000000u) != 0; // bits 12,13,14
+    bool right = (active & 0b000000000000001u) != 0; // bits 0,1,2
 
     return left && right;
 }

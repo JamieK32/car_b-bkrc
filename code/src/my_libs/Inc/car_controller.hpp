@@ -33,6 +33,7 @@ void Car_MoveBackward_Gyro(uint16_t speed, uint16_t distance, float target_yaw);
 
 /* 超声波闭环距离 */
 void Car_MoveToTarget(float targetDistance_cm);
+void Car_SquareByUltrasonicProbe();
 
 /* 复合动作 */
 void Car_BackIntoGarage_Cam(void);
