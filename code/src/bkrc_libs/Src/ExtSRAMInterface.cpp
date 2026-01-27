@@ -4,6 +4,14 @@
 
 #include "ExtSRAMInterface.h"
 #include <Command.h>
+#include "log.hpp"
+
+#define LOG_SRAM_WAIT_EN 0
+#if LOG_SRAM_WAIT_EN
+#define log_sram_wait(fmt, ...) LOG_P("[SRAM_WAIT] " fmt "\r\n", ##__VA_ARGS__)
+#else
+#define log_sram_wait(...) do {} while (0)
+#endif
 
 _ExtSRAMInterface ExtSRAMInterface;
 
@@ -64,6 +72,11 @@ void _ExtSRAMInterface::ExMem_Write_Bytes(uint8_t *Tbuf, uint8_t len)
 {
 	unsigned long t = millis();
 	while ((ExMem_Read(WRITEADDRESS) != 0x00) && ((millis() - t) < 1000));
+	unsigned long waited = millis() - t;
+	if (waited > 0)
+	{
+		log_sram_wait("WRITE wait @0x%04X len=%u waited=%lu ms", WRITEADDRESS, len, waited);
+	}
 	for (int8_t i = len - 1; i >= 0; i--)
 	{
 		ExMem_JudgeWrite(WRITEADDRESS + i, Tbuf[ i ]);
@@ -74,6 +87,11 @@ void _ExtSRAMInterface::ExMem_Write_Bytes(uint16_t BaseAdd, uint8_t *Tbuf, uint8
 {
 	unsigned long t = millis();
 	while ((ExMem_Read(BaseAdd) != 0x00) && ((millis() - t) < 1000));
+	unsigned long waited = millis() - t;
+	if (waited > 0)
+	{
+		log_sram_wait("WRITE wait @0x%04X len=%u waited=%lu ms", BaseAdd, len, waited);
+	}
 	for (int8_t i = len - 1; i >= 0; i--)
 	{
 		ExMem_JudgeWrite(BaseAdd + i, Tbuf[i]);
@@ -112,6 +130,11 @@ void _ExtSRAMInterface::ExMem_Read_Bytes(uint8_t *Rbuf, uint8_t len)
 {
 	unsigned long t = millis();
 	while ((ExMem_Read(READADDRESS) == 0x00) && ((millis() - t) < 5000));
+	unsigned long waited = millis() - t;
+	if (waited > 0)
+	{
+		log_sram_wait("READ wait @0x%04X len=%u waited=%lu ms", READADDRESS, len, waited);
+	}
 	//delay(10);
 	for (size_t i = 0; i < len; i++)
 	{
@@ -124,9 +147,23 @@ void _ExtSRAMInterface::ExMem_Read_Bytes(uint16_t BaseAdd, uint8_t *Rbuf, uint8_
 {
 	unsigned long t = millis();
 	while ((ExMem_Read(BaseAdd) == 0x00) && ((millis() - t) < 5000));
+	unsigned long waited = millis() - t;
+	if (waited > 0)
+	{
+		log_sram_wait("READ wait @0x%04X len=%u waited=%lu ms", BaseAdd, len, waited);
+	}
 	for (size_t i = 0; i < len; i++)
 	{
 		Rbuf[ i ] = ExMem_Read(BaseAdd + i);
+	}
+	ExMem_JudgeWrite(BaseAdd, 0x00);
+}
+
+void _ExtSRAMInterface::ExMem_Read_Bytes_NoWait(uint16_t BaseAdd, uint8_t *Rbuf, uint8_t len)
+{
+	for (size_t i = 0; i < len; i++)
+	{
+		Rbuf[i] = ExMem_Read(BaseAdd + i);
 	}
 	ExMem_JudgeWrite(BaseAdd, 0x00);
 }

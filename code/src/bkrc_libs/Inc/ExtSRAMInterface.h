@@ -27,6 +27,7 @@ public:
 	uint8_t ExMem_Read(uint16_t add);
 	void ExMem_Read_Bytes(uint8_t *Rbuf, uint8_t len);
 	void ExMem_Read_Bytes(uint16_t BaseAdd, uint8_t *Rbuf, uint8_t len);
+	void ExMem_Read_Bytes_NoWait(uint16_t BaseAdd, uint8_t *Rbuf, uint8_t len);
 	
 
 private:

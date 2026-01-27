@@ -27,7 +27,7 @@
 #include "vehicle_exchange.h"
 #include "street_light.hpp"
 #include "zigbee_driver.hpp"
-#include "Infrared_driver.hpp"
+#include "FHT.hpp"
 #include "Display3D.hpp"
 #include "multi_button.h"
 #include "button_user.h"
@@ -91,7 +91,7 @@ void on_key_b_click(void) {
 }
 
 void on_key_c_click(void) {
-    identifyTraffic_New(TRAFFIC_A);
+    identifyQrCode_New(2);
 }
 
 void on_key_d_click(void) {

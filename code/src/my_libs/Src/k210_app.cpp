@@ -10,7 +10,7 @@
 #include "log.hpp"
 #include "k210_app.hpp"
 
-#define LOG_K210_EN  0
+#define LOG_K210_EN  1
 
 #if LOG_K210_EN
   #define log_k210(fmt, ...)  LOG_P("[K210] " fmt "\r\n", ##__VA_ARGS__)

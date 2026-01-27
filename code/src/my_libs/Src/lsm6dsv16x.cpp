@@ -15,7 +15,6 @@
 #endif
 
 #define BOOT_TIME      (10)
-#define RAD_TO_DEG     (180.0f / M_PI)
 
 // 默认 0x6B；如果你 WHOAMI 读不到，试试 0x6A
 #define LSM6DSV16X_ADDR (0x6A)
@@ -231,7 +230,7 @@ void Read_LSM6DSV16X(euler_angles_t *angle)
   }
 }
 
-bool LSM6DSV16X_RezeroYaw_Fresh(uint32_t timeout_ms = 200)
+bool LSM6DSV16X_RezeroYaw_Fresh(uint32_t timeout_ms )
 {
   uint32_t waited = 0;
   lsm6dsv16x_fifo_status_t st;

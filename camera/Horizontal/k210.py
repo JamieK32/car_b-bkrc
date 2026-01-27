@@ -362,7 +362,7 @@ class QRCodeProcessor:
         # 计算 VarID 并通过串口发送协议包
         var_id = slot + self.varid_offset
         self.uart_comm.send_var(var_id, s.encode())
-        time.sleep_ms(5000)
+        time.sleep_ms(1000)
         if self.debug:
             log("QR", "TX -> slot:{} varid:{} data:{}".format(slot, var_id, s))
 
@@ -421,9 +421,11 @@ class QRCodeProcessor:
 
             # 6. 判定退出条件
             if len(self.payload_to_slot) >= target_count:
+                self.servo_ctrl.set_angle(-45)
                 if self.debug:
                     log("QR", "Target reached, exiting...")
                 break
+
 
         if self.debug:
             log("QR", "Final Results: {}".format(self.payload_to_slot))

@@ -133,7 +133,7 @@
 
 #include <Arduino.h>
 
-#define LOG_K210_PROTOCOL_EN 0
+#define LOG_K210_PROTOCOL_EN 1
 
 #if LOG_K210_PROTOCOL_EN
   #define log_protocol(fmt, ...)  LOG_P("[K210_PROTOCOL] " fmt "\r\n", ##__VA_ARGS__)
@@ -214,6 +214,21 @@ static void K210_SerialDrain(size_t max_bytes)
 
 #endif // K210_USE_SERIAL
 
+static bool K210_SramWaitHeader(uint16_t base_add, uint32_t timeout_ms)
+{
+    uint32_t t0 = millis();
+    while ((millis() - t0) <= timeout_ms)
+    {
+        uint8_t b1 = ExtSRAMInterface.ExMem_Read(base_add + 1);
+        uint8_t b2 = ExtSRAMInterface.ExMem_Read(base_add + 2);
+        if (b1 == K210_PKT_HEAD_LSB && b2 == K210_PKT_GATE_CMD)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 
 void K210_SerialInit(void)
 {
@@ -246,10 +261,6 @@ void K210_SendCmd(uint8_t cmd, uint8_t data1, uint8_t data2)
         chk,
         K210_PKT_TAIL          // 0xBB
     };
-
-    log_protocol("K210 Send Pkt: %02X %02X %02X %02X %02X %02X %02X %02X",
-          pkt[0], pkt[1], pkt[2], pkt[3],
-          pkt[4], pkt[5], pkt[6], pkt[7]);
 
 #ifdef K210_USE_SERIAL
     K210_PORT.write(pkt, 8);
@@ -371,11 +382,15 @@ bool K210_ReadFrame(K210_Frame *frame, K210_ReadMode mode)
 
 #else
     /* ============ 你原来的 SRAM 版本原封不动保留 ============ */
+    if (!frame) return false;
+
+    const uint32_t sram_timeout_ms = 5000;
+    if (!K210_SramWaitHeader(K210_RX_BASE_ADDR, sram_timeout_ms)) return false;
 
     /* ================= 定长帧 ================= */
     if (mode == K210_READ_FIXED)
     {
-        ExtSRAMInterface.ExMem_Read_Bytes(K210_RX_BASE_ADDR, buf, 8);
+        ExtSRAMInterface.ExMem_Read_Bytes_NoWait(K210_RX_BASE_ADDR, buf, 8);
 
         if (buf[1] != K210_PKT_HEAD_LSB) return false;
         if (buf[2] != K210_PKT_GATE_CMD) return false;
@@ -395,7 +410,8 @@ bool K210_ReadFrame(K210_Frame *frame, K210_ReadMode mode)
     /* ================= 变长帧 ================= */
     else
     {
-        ExtSRAMInterface.ExMem_Read_Bytes(K210_RX_BASE_ADDR, buf, 5);
+        uint32_t start = millis();
+        ExtSRAMInterface.ExMem_Read_Bytes_NoWait(K210_RX_BASE_ADDR, buf, 5);
 
         if (buf[1] != K210_PKT_HEAD_LSB) return false;
         if (buf[2] != K210_PKT_GATE_CMD) return false;
@@ -407,7 +423,7 @@ bool K210_ReadFrame(K210_Frame *frame, K210_ReadMode mode)
         uint16_t total_len = (uint16_t)payload_len + 7;
         if (total_len > K210_RX_MAX_LEN) return false;
 
-        ExtSRAMInterface.ExMem_Read_Bytes(
+        ExtSRAMInterface.ExMem_Read_Bytes_NoWait(
             K210_RX_BASE_ADDR + 5,
             &buf[5],
             total_len - 5
@@ -432,6 +448,8 @@ bool K210_ReadFrame(K210_Frame *frame, K210_ReadMode mode)
         }
 
         frame->clear_len = total_len;
+        uint32_t end = millis() - start;
+        log_protocol("end = %d", end);
         return true;
     }
 #endif
